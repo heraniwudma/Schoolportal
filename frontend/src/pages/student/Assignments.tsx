@@ -27,7 +27,7 @@ interface FormattedAssignment {
   teacherName: string;
 }
 
-const Assignments = ({ searchQuery }: { searchQuery: string }) => {
+const Assignments = ({ searchQuery = '' }: { searchQuery?: string }) => {
   const navigate = useNavigate();
   const [assignments, setAssignments] = useState<FormattedAssignment[]>([]);
   const [selectedSubject, setSelectedSubject] = useState<string>('ALL');

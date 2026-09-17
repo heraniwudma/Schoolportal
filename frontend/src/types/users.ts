@@ -18,6 +18,7 @@ export interface StudentProfile {
   address: string | null;
   emergencyContact: string | null;
   status: StudentStatus;
+  parentId?: string | null;
   ClassSection: ClassSection | null;
   Parent: ParentProfile | null;
 }
@@ -39,6 +40,7 @@ export interface ParentProfile {
   phoneNumber: string | null;
   occupation: string | null;
   relationship: string | null;
+  childrenCount?: number;
   Student?: Array<{ id: string; firstName: string; lastName: string; admissionNo: string }>;
 }
 

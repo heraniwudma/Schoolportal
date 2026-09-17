@@ -96,7 +96,7 @@ const TimetableManagement: React.FC = () => {
     refetchAcademicYears: refetchYears,
   } = useAcademicYear();
 
-  const [selectedAcademicYearId, setSelectedAcademicYearId] = useState<string>('');
+  const [selectedAcademicYearId, setSelectedAcademicYearId] = useState<string>(activeAcademicYearId || '');
   const academicYearId = selectedAcademicYearId || activeAcademicYearId;
 
   const {
@@ -170,14 +170,14 @@ const TimetableManagement: React.FC = () => {
     isLoading: loadingPeriods,
     isError: errorPeriods,
     refetch: refetchPeriods,
-  } = useTimetablePeriods(selectedAcademicYearId);
+  } = useTimetablePeriods(academicYearId);
 
   const {
     data: scheduleData,
     isLoading: loadingSchedule,
     isError: errorSchedule,
     refetch: refetchSchedule,
-  } = useSectionSchedule(selectedClassSectionId, selectedAcademicYearId);
+  } = useSectionSchedule(selectedClassSectionId, academicYearId);
 
   const saveDraftMutation = useSaveDraftSchedule();
   const publishMutation = usePublishSchedule();

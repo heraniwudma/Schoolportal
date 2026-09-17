@@ -15,7 +15,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { useOutletContext, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAcademicYear } from '../../context/AcademicYearContext';
 import {
   getAdminSections,
@@ -60,7 +60,6 @@ function formatDate(isoString?: string | null): string {
 
 const ClassRoster = () => {
   const navigate = useNavigate();
-  const { searchQuery: globalSearchQuery } = useOutletContext<{ searchQuery: string }>();
   const [localSearch, setLocalSearch] = useState('');
   const { academicYears, activeAcademicYearId, isLoading: isLoadingYears } = useAcademicYear();
   const [selectedAcademicYearId, setSelectedAcademicYearId] = useState<string>('');
@@ -103,7 +102,7 @@ const ClassRoster = () => {
     enabled: isReviewModalOpen && !!selectedSection?.id && !!academicYearId,
   });
 
-  const effectiveSearch = localSearch || globalSearchQuery || '';
+  const effectiveSearch = localSearch;
 
   const filteredSections = sections.filter((sec) => {
     const teacherName = sec.homeroomTeacher || '';

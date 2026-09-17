@@ -17,9 +17,14 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { LinkChildrenDto } from './dto/link-children.dto';
 import { createClient } from '@supabase/supabase-js';
 
-// ─── Safe user shape returned to the frontend ────────────────────────────────
+// ─── Select Definitions ───────────────────────────────────────────────────────
 
-const USER_SELECT = {
+/**
+ * Optimized projection for Admin User Management list view (GET /users).
+ * Excludes expensive second-level relations (Student.Parent, Parent.Student).
+ * Includes scalar Student.parentId (0 joins) and Parent._count.Student.
+ */
+const USER_LIST_SELECT = {
   id: true,
   loginId: true,
   email: true,
@@ -42,32 +47,67 @@ const USER_SELECT = {
       address: true,
       emergencyContact: true,
       status: true,
-      institutionId: true,
-      institutionName: true,
-      fatherName: true,
-      grandfatherName: true,
-      admissionType: true,
-      hasDisability: true,
-      disabilityType: true,
-      nationality: true,
-      familyKebele: true,
-      locationType: true,
-      fatherEducationLevel: true,
-      motherEducationLevel: true,
-      economicStatus: true,
-      guardianFullName: true,
-      familyHeadGender: true,
-      guardianEmail: true,
-      guardianPhone: true,
-      nationalId: true,
-      residenceRegion: true,
-      residenceZone: true,
-      residenceWoreda: true,
-      birthRegion: true,
-      birthZone: true,
-      birthWoreda: true,
-      parentStatus: true,
-      ClassSection: { select: { id: true, name: true, GradeLevel: { select: { id: true, name: true } } } },
+      parentId: true,
+      ClassSection: { select: { id: true, name: true } },
+    },
+  },
+  Teacher: {
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      staffId: true,
+      qualification: true,
+      phoneNumber: true,
+      address: true,
+    },
+  },
+  Parent: {
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      phoneNumber: true,
+      occupation: true,
+      relationship: true,
+      _count: {
+        select: {
+          Student: true,
+        },
+      },
+    },
+  },
+} as const;
+
+/**
+ * Full detail projection for single user view (GET /users/:id) and mutation returns.
+ * Retains complete second-level relations (Student.Parent and Parent.Student[]).
+ */
+const USER_DETAIL_SELECT = {
+  id: true,
+  loginId: true,
+  email: true,
+  name: true,
+  role: true,
+  phoneNumber: true,
+  avatarUrl: true,
+  isActive: true,
+  isDeleted: true,
+  createdAt: true,
+  lastLoginAt: true,
+  Student: {
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      admissionNo: true,
+      gender: true,
+      dob: true,
+      address: true,
+      emergencyContact: true,
+      status: true,
+      parentId: true,
+      ClassSection: { select: { id: true, name: true } },
       Parent: {
         select: {
           id: true,
@@ -109,6 +149,87 @@ const USER_SELECT = {
     },
   },
 } as const;
+
+/**
+ * Completely independent select for CSV export (GET /users/export).
+ * Decoupled from USER_LIST_SELECT so changes to list performance cannot affect CSV output.
+ */
+const USER_EXPORT_SELECT = {
+  id: true,
+  loginId: true,
+  email: true,
+  name: true,
+  role: true,
+  phoneNumber: true,
+  avatarUrl: true,
+  isActive: true,
+  isDeleted: true,
+  createdAt: true,
+  lastLoginAt: true,
+  Student: {
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      admissionNo: true,
+      gender: true,
+      dob: true,
+      address: true,
+      emergencyContact: true,
+      status: true,
+      guardianFullName: true,
+      guardianPhone: true,
+      ClassSection: {
+        select: {
+          id: true,
+          name: true,
+          GradeLevel: { select: { id: true, name: true } },
+        },
+      },
+      Parent: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          phoneNumber: true,
+          relationship: true,
+        },
+      },
+    },
+  },
+  Teacher: {
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      staffId: true,
+      qualification: true,
+      phoneNumber: true,
+      address: true,
+    },
+  },
+  Parent: {
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      phoneNumber: true,
+      occupation: true,
+      relationship: true,
+      Student: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          admissionNo: true,
+        },
+      },
+    },
+  },
+} as const;
+
+// Backward-compatibility alias for internal usages
+const USER_SELECT = USER_DETAIL_SELECT;
 
 @Injectable()
 export class UsersService {
@@ -216,13 +337,25 @@ export class UsersService {
     const where = this.buildWhereClause(query);
     const orderBy = this.buildOrderByClause(query);
 
-    const [users, total] = await this.prisma.$transaction([
-      this.prisma.user.findMany({ where, orderBy, skip, take: limit, select: USER_SELECT }),
+    const [users, total] = await Promise.all([
+      this.prisma.user.findMany({ where, orderBy, skip, take: limit, select: USER_LIST_SELECT }),
       this.prisma.user.count({ where }),
     ]);
 
+    const sanitizedUsers = users.map((rawUser) => {
+      const safe = this.sanitize(rawUser) as any;
+      if (safe.Parent) {
+        const { _count, ...parentFields } = safe.Parent;
+        safe.Parent = {
+          ...parentFields,
+          childrenCount: _count?.Student ?? 0,
+        };
+      }
+      return safe;
+    });
+
     return {
-      data: users.map(this.sanitize),
+      data: sanitizedUsers,
       meta: {
         total,
         page,
@@ -250,7 +383,7 @@ export class UsersService {
     const users = await this.prisma.user.findMany({
       where,
       orderBy,
-      select: USER_SELECT,
+      select: USER_EXPORT_SELECT,
     });
 
     if (users.length === 0) {
@@ -393,7 +526,7 @@ export class UsersService {
   async findOne(id: string) {
     const user = await this.prisma.user.findUnique({
       where: { id, isDeleted: false },
-      select: USER_SELECT,
+      select: USER_DETAIL_SELECT,
     });
     if (!user) throw new NotFoundException('User not found');
     return this.sanitize(user);

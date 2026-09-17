@@ -1,14 +1,12 @@
 import React, { useState } from 'react';
 import { Search, RefreshCw, FileCheck, CheckCircle, Clock, Eye, AlertCircle, Award, UserCheck } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { useOutletContext } from 'react-router-dom';
 import { useAcademicYear } from '../../context/AcademicYearContext';
 import { getTermsForReportCards } from '../../api/reportCards';
 import { getAdminSections, getAdminSectionReportCards, AdminSectionSummary, AdminReportCardStudent } from '../../api/adminReports';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 const AdminReportCards = () => {
-  const { searchQuery: globalSearchQuery } = useOutletContext<{ searchQuery: string }>();
   const [localSearch, setLocalSearch] = useState('');
   
   const { academicYears, activeAcademicYearId, isLoading: isLoadingYears } = useAcademicYear();
@@ -47,7 +45,7 @@ const AdminReportCards = () => {
     enabled: isReviewModalOpen && !!selectedSection?.id && !!academicYearId,
   });
 
-  const effectiveSearch = localSearch || globalSearchQuery || '';
+  const effectiveSearch = localSearch;
   
   const filteredSections = sections.filter((sec) => {
     const teacherName = sec.homeroomTeacher || '';

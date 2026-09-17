@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { Users, UserPlus, ClipboardList, Building2, Loader2 } from 'lucide-react';
+import { Users, UserPlus, ClipboardList, Building2, Loader2, Search } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { useOutletContext } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAcademicYear } from '../../context/AcademicYearContext';
 import { useGradeLevels, useGradeSubjects } from '../../hooks/useAcademicStructure';
@@ -11,7 +10,7 @@ import { toast } from 'sonner';
 
 export const TeacherAssignments = () => {
   const queryClient = useQueryClient();
-  const { searchQuery: globalSearchQuery } = useOutletContext<{ searchQuery: string }>();
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Centralized active academic year from context
   const { academicYears, activeAcademicYearId, isLoading: loadingYears } = useAcademicYear();
@@ -177,7 +176,7 @@ export const TeacherAssignments = () => {
   const assignedCount = assignedTeacherIds.size;
   const unassignedCount = Math.max(0, totalTeachers - assignedCount);
 
-  const query = globalSearchQuery?.toLowerCase() || '';
+  const query = searchQuery?.toLowerCase() || '';
   const filteredHomeRoom = homeRoomAssignments.filter((a) => {
     const teacherName = getTeacherDisplayName(a.teacher).toLowerCase();
     return (
@@ -204,7 +203,17 @@ export const TeacherAssignments = () => {
           <h2 className="text-3xl font-black text-gray-900">Teacher Assignments</h2>
           <p className="text-sm text-gray-500">Assign home room teachers and subject teachers to classes and sections.</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          <div className="relative min-w-[280px]">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search teacher, section, grade, or subject..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full h-12 pl-11 pr-4 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-900/20 outline-none transition-all font-medium shadow-sm"
+            />
+          </div>
           <select
             value={academicYearId}
             onChange={(e) => setSelectedAcademicYearId(e.target.value)}

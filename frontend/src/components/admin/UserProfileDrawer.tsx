@@ -1,4 +1,6 @@
 import React from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../../lib/api';
 import {
   X,
   User,
@@ -13,6 +15,7 @@ import {
   GraduationCap,
   MapPin,
   AlertCircle,
+  Loader2,
 } from 'lucide-react';
 import { ManagedUser, ROLE_COLORS, ROLE_LABELS, getUserDisplayName, getUserProfileId } from '../../types/users';
 import { cn } from '../../lib/utils';
@@ -43,11 +46,21 @@ const Field: React.FC<{ icon: React.ElementType; label: string; value?: string |
 };
 
 const UserProfileDrawer: React.FC<UserProfileDrawerProps> = ({ user, onClose, onManageChildren }) => {
+  const userId = user?.id;
+
+  const { data: detailUser, isLoading: isDetailLoading } = useQuery<ManagedUser>({
+    queryKey: ['users', 'detail', userId],
+    queryFn: () => api.get<ManagedUser>(`/users/${userId}`),
+    enabled: Boolean(userId),
+    staleTime: 30_000,
+  });
+
   if (!user) return null;
 
-  const roleColor = ROLE_COLORS[user.role];
-  const displayName = getUserDisplayName(user);
-  const profileId = getUserProfileId(user);
+  const activeUser = detailUser ?? user;
+  const roleColor = ROLE_COLORS[activeUser.role];
+  const displayName = getUserDisplayName(activeUser);
+  const profileId = getUserProfileId(activeUser);
   const initials = displayName
     .split(' ')
     .map((w) => w[0])
@@ -64,7 +77,15 @@ const UserProfileDrawer: React.FC<UserProfileDrawerProps> = ({ user, onClose, on
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h2 className="text-lg font-black text-gray-900">User Profile</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-black text-gray-900">User Profile</h2>
+            {isDetailLoading && (
+              <span className="flex items-center gap-1 text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full animate-pulse">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Loading details...
+              </span>
+            )}
+          </div>
           <button
             onClick={onClose}
             className="p-2 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
@@ -82,14 +103,14 @@ const UserProfileDrawer: React.FC<UserProfileDrawerProps> = ({ user, onClose, on
             </div>
             <div>
               <h3 className="text-xl font-black text-gray-900">{displayName}</h3>
-              <p className="text-sm text-gray-500">{user.email ?? 'No email'}</p>
+              <p className="text-sm text-gray-500">{activeUser.email ?? 'No email'}</p>
             </div>
             <div className="flex items-center justify-center gap-2">
               <span className={cn('px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest', roleColor.bg, roleColor.text)}>
-                {ROLE_LABELS[user.role]}
+                {ROLE_LABELS[activeUser.role]}
               </span>
-              <span className={cn('px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest', user.isActive ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700')}>
-                {user.isActive ? 'Active' : 'Inactive'}
+              <span className={cn('px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest', activeUser.isActive ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700')}>
+                {activeUser.isActive ? 'Active' : 'Inactive'}
               </span>
             </div>
           </div>
@@ -98,61 +119,61 @@ const UserProfileDrawer: React.FC<UserProfileDrawerProps> = ({ user, onClose, on
           <section className="space-y-3">
             <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest">Account</h4>
             <div className="space-y-3">
-              <Field icon={Shield} label="Login ID" value={user.loginId} />
-              <Field icon={Shield} label="Profile ID" value={profileId !== user.loginId ? profileId : undefined} />
-              <Field icon={Mail} label="Email" value={user.email} />
-              <Field icon={Phone} label="Phone" value={user.phoneNumber} />
-              <Field icon={Calendar} label="Registered" value={fmt(user.createdAt)} />
-              <Field icon={Clock} label="Last Login" value={fmt(user.lastLoginAt)} />
+              <Field icon={Shield} label="Login ID" value={activeUser.loginId} />
+              <Field icon={Shield} label="Profile ID" value={profileId !== activeUser.loginId ? profileId : undefined} />
+              <Field icon={Mail} label="Email" value={activeUser.email} />
+              <Field icon={Phone} label="Phone" value={activeUser.phoneNumber} />
+              <Field icon={Calendar} label="Registered" value={fmt(activeUser.createdAt)} />
+              <Field icon={Clock} label="Last Login" value={fmt(activeUser.lastLoginAt)} />
             </div>
           </section>
 
           {/* Student profile */}
-          {user.Student && (
+          {activeUser.Student && (
             <section className="space-y-3">
               <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest">Student Details</h4>
               <div className="space-y-3">
-                <Field icon={GraduationCap} label="Admission No." value={user.Student.admissionNo} />
-                <Field icon={BookOpen} label="Class / Section" value={user.Student.ClassSection?.name} />
-                <Field icon={User} label="Gender" value={user.Student.gender} />
-                <Field icon={Calendar} label="Date of Birth" value={fmt(user.Student.dob)} />
-                <Field icon={MapPin} label="Address" value={user.Student.address} />
-                <Field icon={AlertCircle} label="Emergency Contact" value={user.Student.emergencyContact} />
-                <Field icon={Shield} label="Enrollment Status" value={user.Student.status} />
+                <Field icon={GraduationCap} label="Admission No." value={activeUser.Student.admissionNo} />
+                <Field icon={BookOpen} label="Class / Section" value={activeUser.Student.ClassSection?.name} />
+                <Field icon={User} label="Gender" value={activeUser.Student.gender} />
+                <Field icon={Calendar} label="Date of Birth" value={fmt(activeUser.Student.dob)} />
+                <Field icon={MapPin} label="Address" value={activeUser.Student.address} />
+                <Field icon={AlertCircle} label="Emergency Contact" value={activeUser.Student.emergencyContact} />
+                <Field icon={Shield} label="Enrollment Status" value={activeUser.Student.status} />
               </div>
-              {user.Student.Parent && (
+              {activeUser.Student.Parent && (
                 <div className="bg-gray-50 rounded-xl p-4 space-y-2">
                   <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Parent / Guardian</p>
-                  <p className="text-sm font-black text-gray-900">{user.Student.Parent.firstName} {user.Student.Parent.lastName}</p>
-                  {user.Student.Parent.phoneNumber && <p className="text-xs text-gray-500">{user.Student.Parent.phoneNumber}</p>}
-                  {user.Student.Parent.relationship && <p className="text-xs text-gray-500">{user.Student.Parent.relationship}</p>}
+                  <p className="text-sm font-black text-gray-900">{activeUser.Student.Parent.firstName} {activeUser.Student.Parent.lastName}</p>
+                  {activeUser.Student.Parent.phoneNumber && <p className="text-xs text-gray-500">{activeUser.Student.Parent.phoneNumber}</p>}
+                  {activeUser.Student.Parent.relationship && <p className="text-xs text-gray-500">{activeUser.Student.Parent.relationship}</p>}
                 </div>
               )}
             </section>
           )}
 
           {/* Teacher profile */}
-          {user.Teacher && (
+          {activeUser.Teacher && (
             <section className="space-y-3">
               <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest">Teacher Details</h4>
               <div className="space-y-3">
-                <Field icon={Building2} label="Staff ID" value={user.Teacher.staffId} />
-                <Field icon={GraduationCap} label="Qualification" value={user.Teacher.qualification} />
-                <Field icon={Phone} label="Phone" value={user.Teacher.phoneNumber} />
-                <Field icon={MapPin} label="Address" value={user.Teacher.address} />
+                <Field icon={Building2} label="Staff ID" value={activeUser.Teacher.staffId} />
+                <Field icon={GraduationCap} label="Qualification" value={activeUser.Teacher.qualification} />
+                <Field icon={Phone} label="Phone" value={activeUser.Teacher.phoneNumber} />
+                <Field icon={MapPin} label="Address" value={activeUser.Teacher.address} />
               </div>
             </section>
           )}
 
           {/* Parent profile */}
-          {user.Parent && (
+          {activeUser.Parent && (
             <section className="space-y-3">
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest">Parent Details</h4>
                 {onManageChildren && (
                   <button
                     type="button"
-                    onClick={() => onManageChildren(user)}
+                    onClick={() => onManageChildren(activeUser)}
                     className="text-xs font-bold text-blue-600 hover:text-blue-700 hover:underline flex items-center gap-1"
                   >
                     <Users className="w-3.5 h-3.5" />
@@ -161,16 +182,16 @@ const UserProfileDrawer: React.FC<UserProfileDrawerProps> = ({ user, onClose, on
                 )}
               </div>
               <div className="space-y-3">
-                <Field icon={Phone} label="Phone" value={user.Parent.phoneNumber} />
-                <Field icon={Building2} label="Occupation" value={user.Parent.occupation} />
-                <Field icon={Users} label="Relationship to Student" value={user.Parent.relationship} />
+                <Field icon={Phone} label="Phone" value={activeUser.Parent.phoneNumber} />
+                <Field icon={Building2} label="Occupation" value={activeUser.Parent.occupation} />
+                <Field icon={Users} label="Relationship to Student" value={activeUser.Parent.relationship} />
               </div>
-              {user.Parent.Student && user.Parent.Student.length > 0 ? (
+              {activeUser.Parent.Student && activeUser.Parent.Student.length > 0 ? (
                 <div className="bg-gray-50 rounded-xl p-4 space-y-2">
                   <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                    Linked Children ({user.Parent.Student.length})
+                    Linked Children ({activeUser.Parent.Student.length})
                   </p>
-                  {user.Parent.Student.map((s) => (
+                  {activeUser.Parent.Student.map((s) => (
                     <div key={s.id} className="flex items-center justify-between py-1 border-b border-gray-100 last:border-0">
                       <p className="text-sm font-bold text-gray-900">{s.firstName} {s.lastName}</p>
                       <p className="text-xs text-gray-400 font-mono">{s.admissionNo}</p>
@@ -183,7 +204,7 @@ const UserProfileDrawer: React.FC<UserProfileDrawerProps> = ({ user, onClose, on
                   {onManageChildren && (
                     <button
                       type="button"
-                      onClick={() => onManageChildren(user)}
+                      onClick={() => onManageChildren(activeUser)}
                       className="mt-2 px-3 py-1 bg-white border border-gray-200 text-xs font-bold text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
                     >
                       + Link Children

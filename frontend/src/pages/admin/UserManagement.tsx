@@ -439,6 +439,10 @@ const UserManagement: React.FC = () => {
                   const profileId = getUserProfileId(u);
                   const initials = displayName.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
                   const sectionName = u.Student?.ClassSection?.name;
+                  const childCount =
+                    u.Parent?.childrenCount ??
+                    u.Parent?.Student?.length ??
+                    0;
 
                   return (
                     <tr key={u.id} className="hover:bg-gray-50/50 transition-colors group">
@@ -468,13 +472,13 @@ const UserManagement: React.FC = () => {
                             <span
                               className={cn(
                                 'px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider',
-                                u.Parent?.Student && u.Parent.Student.length > 0
+                                childCount > 0
                                   ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                                   : 'bg-gray-100 text-gray-400',
                               )}
                             >
-                              {u.Parent?.Student?.length
-                                ? `${u.Parent.Student.length} Child${u.Parent.Student.length > 1 ? 'ren' : ''}`
+                              {childCount > 0
+                                ? `${childCount} Child${childCount > 1 ? 'ren' : ''}`
                                 : 'No Children'}
                             </span>
                           </div>

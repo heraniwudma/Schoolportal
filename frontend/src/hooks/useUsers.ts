@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError, downloadFile } from '../lib/api';
 import {
   ClassSection,
@@ -45,46 +46,63 @@ function buildQuery(filters: UserFilters): string {
 }
 
 export function useUsers() {
-  const [users, setUsers] = useState<ManagedUser[]>([]);
-  const [meta, setMeta] = useState({ total: 0, page: 1, limit: 15, totalPages: 1 });
-  const [stats, setStats] = useState<UserStats | null>(null);
+  const queryClient = useQueryClient();
+
+  const [filters, setFilters] = useState<UserFilters>(DEFAULT_FILTERS);
+  const [debouncedSearch, setDebouncedSearch] = useState(filters.search);
   const [classSections, setClassSections] = useState<ClassSection[]>([]);
   const [parentsList, setParentsList] = useState<ParentLookupOption[]>([]);
-  const [filters, setFilters] = useState<UserFilters>(DEFAULT_FILTERS);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isStatsLoading, setIsStatsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  // Debounce search to avoid hammering the API on every keystroke
-  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Debounce search input to avoid issuing queries on every keystroke
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(filters.search);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [filters.search]);
 
-  const fetchUsers = useCallback(async (f: UserFilters) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const result = await api.get<PaginatedUsers>(`/users?${buildQuery(f)}`);
-      setUsers(result.data);
-      setMeta(result.meta);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to load users');
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  // Active query filters with debounced search
+  const activeQueryFilters = useMemo(
+    () => ({
+      ...filters,
+      search: debouncedSearch,
+    }),
+    [filters, debouncedSearch],
+  );
 
-  const fetchStats = useCallback(async () => {
-    setIsStatsLoading(true);
-    try {
-      const s = await api.get<UserStats>('/users/stats');
-      setStats(s);
-    } catch {
-      // stats failure is non-critical
-    } finally {
-      setIsStatsLoading(false);
-    }
-  }, []);
+  // 1. Paginated Users Query with React Query
+  const {
+    data: usersData,
+    isLoading: isUsersLoading,
+    error: usersQueryError,
+    refetch: refetchUsers,
+  } = useQuery<PaginatedUsers>({
+    queryKey: ['users', 'list', activeQueryFilters],
+    queryFn: () => api.get<PaginatedUsers>(`/users?${buildQuery(activeQueryFilters)}`),
+    placeholderData: keepPreviousData,
+  });
 
+  // 2. Statistics Query with React Query (runs independently of users table)
+  const {
+    data: statsData,
+    isLoading: isStatsLoading,
+    refetch: refetchStatsQuery,
+  } = useQuery<UserStats>({
+    queryKey: ['users', 'stats'],
+    queryFn: () => api.get<UserStats>('/users/stats'),
+  });
+
+  const users = usersData?.data ?? [];
+  const meta = usersData?.meta ?? { total: 0, page: filters.page, limit: filters.limit, totalPages: 1 };
+  const stats = statsData ?? null;
+  const isLoading = isUsersLoading || isRefreshing;
+  const error = usersQueryError
+    ? (usersQueryError instanceof ApiError ? usersQueryError.message : 'Failed to load users')
+    : null;
+
+  // Dropdown Lookups (lazy loaded on demand)
   const fetchClassSections = useCallback(async (academicYearId?: string) => {
     try {
       const url = academicYearId
@@ -94,7 +112,6 @@ export function useUsers() {
       setClassSections(sections);
       return sections;
     } catch {
-      // non-critical
       return [];
     }
   }, []);
@@ -106,82 +123,78 @@ export function useUsers() {
       setParentsList(list);
       return list;
     } catch {
-      // non-critical
       return [];
     }
   }, [parentsList.length]);
 
-  // Initial load: fetch users list and summary stats only
-  useEffect(() => {
-    void fetchUsers(filters);
-    void fetchStats();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Re-fetch when non-search filters change immediately
+  // Filter application helper
   const applyFilters = useCallback(
     (updates: Partial<UserFilters>) => {
-      const newFilters = { ...filters, ...updates, page: updates.page ?? 1 };
-      setFilters(newFilters);
-
-      if ('search' in updates) {
-        // Debounce search input
-        if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-        searchDebounceRef.current = setTimeout(() => {
-          void fetchUsers(newFilters);
-        }, 350);
-      } else {
-        void fetchUsers(newFilters);
-      }
+      setFilters((prev) => {
+        const next = { ...prev, ...updates };
+        if (!('page' in updates)) {
+          next.page = 1;
+        }
+        return next;
+      });
     },
-    [filters, fetchUsers],
+    [],
   );
 
-  const refresh = useCallback(() => {
-    void fetchUsers(filters);
-    void fetchStats();
-    if (parentsList.length > 0) void fetchParentsList();
-  }, [filters, fetchUsers, fetchStats, fetchParentsList, parentsList.length]);
+  const refresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([
+        refetchUsers(),
+        refetchStatsQuery(),
+        parentsList.length > 0 ? fetchParentsList() : Promise.resolve(),
+      ]);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [refetchUsers, refetchStatsQuery, parentsList.length, fetchParentsList]);
+
+  const fetchStats = useCallback(async () => {
+    const res = await refetchStatsQuery();
+    return res.data;
+  }, [refetchStatsQuery]);
 
   // ── Mutations ──────────────────────────────────────────────────────────────
 
   const createUser = useCallback(
     async (payload: CreateUserPayload): Promise<ManagedUser> => {
       const created = await api.post<ManagedUser>('/users', payload);
-      await refresh();
+      await queryClient.invalidateQueries({ queryKey: ['users'] });
       return created;
     },
-    [refresh],
+    [queryClient],
   );
 
   const updateUser = useCallback(
     async (id: string, payload: UpdateUserPayload): Promise<ManagedUser> => {
       const updated = await api.patch<ManagedUser>(`/users/${id}`, payload);
-      setUsers((prev) => prev.map((u) => (u.id === id ? updated : u)));
-      void fetchStats();
+      await queryClient.invalidateQueries({ queryKey: ['users'] });
       return updated;
     },
-    [fetchStats],
+    [queryClient],
   );
 
   const activateUser = useCallback(
     async (id: string): Promise<ManagedUser> => {
       const updated = await api.patch<ManagedUser>(`/users/${id}/activate`);
-      setUsers((prev) => prev.map((u) => (u.id === id ? updated : u)));
-      void fetchStats();
+      await queryClient.invalidateQueries({ queryKey: ['users'] });
       return updated;
     },
-    [fetchStats],
+    [queryClient],
   );
 
   const deactivateUser = useCallback(
     async (id: string): Promise<ManagedUser> => {
       const updated = await api.patch<ManagedUser>(`/users/${id}/deactivate`);
-      setUsers((prev) => prev.map((u) => (u.id === id ? updated : u)));
-      void fetchStats();
+      await queryClient.invalidateQueries({ queryKey: ['users'] });
       return updated;
     },
-    [fetchStats],
+    [queryClient],
   );
 
   const resetPassword = useCallback(async (id: string, newPassword: string) => {
@@ -191,11 +204,10 @@ export function useUsers() {
   const deleteUser = useCallback(
     async (id: string) => {
       const result = await api.delete<{ message: string }>(`/users/${id}`);
-      setUsers((prev) => prev.filter((u) => u.id !== id));
-      void fetchStats();
+      await queryClient.invalidateQueries({ queryKey: ['users'] });
       return result;
     },
-    [fetchStats],
+    [queryClient],
   );
 
   const getStudentsLookup = useCallback(async () => {
@@ -212,10 +224,10 @@ export function useUsers() {
         `/users/parents/${parentId}/children`,
         { studentIds },
       );
-      await refresh();
+      await queryClient.invalidateQueries({ queryKey: ['users'] });
       return result;
     },
-    [refresh],
+    [queryClient],
   );
 
   const exportUsers = useCallback(

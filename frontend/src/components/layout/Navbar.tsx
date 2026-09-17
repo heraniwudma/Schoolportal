@@ -1,14 +1,18 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { useTranslation } from '../../i18n/LanguageContext';
-import { Search, Menu, UserCircle } from 'lucide-react';
+import { Menu, UserCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import ChildSelector from '../parent/ChildSelector';
 import LanguageSelector from '../common/LanguageSelector';
 
-const Navbar = ({ onMenuClick, onSidebarOpen, onSidebarClose, searchQuery, setSearchQuery }: { onMenuClick?: () => void; onSidebarOpen?: () => void; onSidebarClose?: () => void; searchQuery: string; setSearchQuery: (query: string) => void; }) => {
+interface NavbarProps {
+  onMenuClick?: () => void;
+  onSidebarOpen?: () => void;
+  onSidebarClose?: () => void;
+}
+
+const Navbar = ({ onMenuClick, onSidebarOpen, onSidebarClose }: NavbarProps) => {
   const { user } = useAuth();
-  const { t } = useTranslation();
 
   return (
     <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 sticky top-0 z-40">
@@ -20,16 +24,6 @@ const Navbar = ({ onMenuClick, onSidebarOpen, onSidebarClose, searchQuery, setSe
         >
           <Menu className="w-6 h-6" />
         </button>
-        </div>
-        <div className="relative max-w-md w-full hidden md:block">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            type="text"
-            placeholder={t('common.nav.searchPlaceholder')}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg w-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-          />
         </div>
       </div>
 

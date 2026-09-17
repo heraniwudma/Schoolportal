@@ -22,6 +22,7 @@ export function useTimetablePeriods(academicYearId?: string, includeInactive = f
   return useQuery<SchedulePeriod[]>({
     queryKey: TIMETABLE_KEYS.periods(academicYearId),
     queryFn: () => timetableApi.getPeriods(academicYearId, includeInactive),
+    enabled: !!academicYearId && academicYearId.trim() !== '',
     staleTime: 5 * 60 * 1000,
   });
 }
@@ -49,7 +50,8 @@ export function useSectionSchedule(
   return useQuery<SectionScheduleResponse>({
     queryKey: TIMETABLE_KEYS.section(classSectionId || undefined, academicYearId || undefined),
     queryFn: () => timetableApi.getSectionSchedule(classSectionId!, academicYearId || undefined),
-    enabled: !!classSectionId,
+    enabled: !!classSectionId && !!academicYearId,
+    staleTime: 5 * 60 * 1000,
   });
 }
 

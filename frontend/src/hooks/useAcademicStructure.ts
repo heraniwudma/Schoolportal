@@ -43,6 +43,7 @@ export function useGradeLevels(academicYearId?: string) {
       const res = await getGradeLevels(academicYearId);
       return Array.isArray(res) ? res : (res as any)?.data || [];
     },
+    enabled: !!academicYearId && academicYearId.trim() !== '',
     staleTime: 5 * 60 * 1000,
   });
 }

@@ -305,14 +305,26 @@ export class TimetableService {
       throw new NotFoundException(`ClassSection with ID '${classSectionId}' not found`);
     }
 
-    const year = await this.resolveAcademicYear(
-      academicYearId || section.academicYearId || undefined,
-    );
+    // Reuse already-loaded section.AcademicYear whenever possible to eliminate redundant database query
+    let year: { id: string; year: string; isCurrent: boolean };
+    const requestedYearId = academicYearId?.trim();
 
-    if (section.academicYearId && section.academicYearId !== year.id) {
-      throw new BadRequestException(
-        `ClassSection '${section.name}' does not belong to Academic Year '${year.year}'`,
-      );
+    if (requestedYearId) {
+      if (section.academicYearId && section.academicYearId !== requestedYearId) {
+        const targetYear = await this.resolveAcademicYear(requestedYearId);
+        throw new BadRequestException(
+          `ClassSection '${section.name}' does not belong to Academic Year '${targetYear.year}'`,
+        );
+      }
+      if (section.AcademicYear && section.AcademicYear.id === requestedYearId) {
+        year = section.AcademicYear;
+      } else {
+        year = await this.resolveAcademicYear(requestedYearId);
+      }
+    } else if (section.AcademicYear) {
+      year = section.AcademicYear;
+    } else {
+      year = await this.resolveAcademicYear(section.academicYearId || undefined);
     }
 
     if (user.role === 'TEACHER') {
@@ -339,10 +351,13 @@ export class TimetableService {
       }
     }
 
-    const periods = await this.prisma.schedulePeriod.findMany({
-      where: { academicYearId: year.id, isActive: true },
+    // Load periods once for the academic year and use in-memory mapping for entries
+    const allPeriods = await this.prisma.schedulePeriod.findMany({
+      where: { academicYearId: year.id },
       orderBy: [{ displayOrder: 'asc' }, { periodNumber: 'asc' }],
     });
+    const periods = allPeriods.filter((p) => p.isActive);
+    const periodMap = new Map(allPeriods.map((p) => [p.id, p]));
 
     const schedule = await this.prisma.classSchedule.findUnique({
       where: {
@@ -354,7 +369,6 @@ export class TimetableService {
       include: {
         entries: {
           include: {
-            period: true,
             subject: { select: { id: true, name: true, code: true } },
             teacher: { select: { id: true, firstName: true, lastName: true, staffId: true } },
           },
@@ -397,7 +411,7 @@ export class TimetableService {
         id: e.id,
         dayOfWeek: toTitleCaseDay(e.dayOfWeek),
         periodId: e.periodId,
-        period: e.period,
+        period: periodMap.get(e.periodId) || null,
         subjectId: e.subjectId,
         subject: e.subject,
         teacherId: e.teacherId,

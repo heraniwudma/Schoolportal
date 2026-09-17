@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { Outlet, Navigate, useOutlet } from 'react-router-dom';
+import { Outlet, Navigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Navbar from './Navbar';
 import { useAuth } from '../../context/AuthContext';
@@ -8,7 +8,6 @@ const DashboardLayout = () => {
   const { user, isLoading } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
 
   const handleSidebarOpen = useCallback(() => {
     if (closeTimeoutRef.current) {
@@ -44,11 +43,9 @@ const DashboardLayout = () => {
           onMenuClick={() => setIsSidebarOpen(!isSidebarOpen)} 
           onSidebarOpen={handleSidebarOpen} 
           onSidebarClose={handleSidebarClose} 
-          searchQuery={searchQuery}
-          setSearchQuery={setSearchQuery}
         />
         <main className="p-6 flex-1">
-          <Outlet context={{ searchQuery }} />
+          <Outlet />
         </main>
       </div>
     </div>

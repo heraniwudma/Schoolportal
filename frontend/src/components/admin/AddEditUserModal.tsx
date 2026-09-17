@@ -97,7 +97,7 @@ const AddEditUserModal: React.FC<AddEditUserModalProps> = ({
       lastName: s?.lastName ?? t?.lastName ?? p?.lastName ?? '',
       admissionNo: s?.admissionNo ?? '',
       classSectionId: s?.ClassSection?.id ?? '',
-      parentId: s?.Parent?.id ?? '',
+      parentId: s?.parentId ?? s?.Parent?.id ?? '',
       gender: s?.gender ?? '',
       dob: s?.dob ? s.dob.slice(0, 10) : '',
       address: s?.address ?? t?.address ?? '',
