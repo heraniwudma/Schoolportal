@@ -189,3 +189,28 @@
     letter-spacing: var(--tracking-normal);
   }
 }
+
+/* ─── Security & Print Protection for View-Only Report Cards ─────────── */
+@media print {
+  .report-card-secure-view {
+    display: none !important;
+  }
+  .report-card-print-restriction-notice {
+    display: block !important;
+    padding: 3rem 1.5rem;
+    text-align: center;
+    border: 2px dashed #dc2626;
+    border-radius: 1rem;
+    margin: 2rem auto;
+    max-width: 36rem;
+    background-color: #fef2f2;
+    color: #991b1b;
+  }
+}
+
+@media screen {
+  .report-card-print-restriction-notice {
+    display: none !important;
+  }
+}
+

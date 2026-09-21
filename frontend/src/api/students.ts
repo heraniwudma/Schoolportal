@@ -70,6 +70,7 @@ export const getMyResults = () => api.get<StudentResultsResponse>('/students/me/
 export interface StudentAssignmentItem {
   id: string;
   title: string;
+  subject?: string | null;
   instructions: string | null;
   dueDate: string;
   targetClass: string | null;
@@ -83,6 +84,7 @@ export interface StudentAssignmentItem {
     id: string;
     createdAt: string;
     updatedAt: string;
+    content?: string | null;
     fileName: string | null;
     grades?: Array<{ id: string }>;
   }>;

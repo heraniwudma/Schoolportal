@@ -1,4 +1,4 @@
-import { api } from '../lib/api';
+import { api, downloadFile } from '../lib/api';
 
 // ─── Types matching backend ReportsService responses ─────────────────────────
 
@@ -25,6 +25,58 @@ export interface AdminSectionSummary {
   reviewedAt?: string | null;
   /** UI-friendly label: 'Submitted' | 'Pending Review' | 'Draft' */
   status: string;
+  submissionType?: 'roster' | 'report-cards' | 'both' | null;
+  rosterSubmittedAt?: string | null;
+  reportCardSubmittedAt?: string | null;
+  isReportCardSubmitted?: boolean;
+  isRosterSubmitted?: boolean;
+}
+
+export interface AdminRosterReview {
+  id: string;
+  classSectionId: string;
+  academicYearId: string;
+  homeroomTeacherId: string;
+  status: 'DRAFT' | 'SUBMITTED_TO_ADMIN' | 'APPROVED' | 'REJECTED';
+  submittedAt?: string | null;
+  submittedById?: string | null;
+  reviewedAt?: string | null;
+  reviewedById?: string | null;
+  rejectionReason?: string | null;
+  conductData?: Record<string, any>;
+  classSection?: {
+    id: string;
+    name: string;
+    gradeLevel?: {
+      id: string;
+      name: string;
+    };
+  };
+  academicYear?: {
+    id: string;
+    name: string;
+  };
+  homeroomTeacher?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    staffId?: string;
+  };
+  submittedBy?: {
+    id: string;
+    name: string;
+    role: string;
+  };
+  reviewedBy?: {
+    id: string;
+    name: string;
+    role: string;
+  };
+  submissionType?: 'roster' | 'report-cards' | 'both' | null;
+  rosterSubmittedAt?: string | null;
+  reportCardSubmittedAt?: string | null;
+  isRosterSubmitted?: boolean;
+  isReportCardSubmitted?: boolean;
 }
 
 export interface AdminReportCardStudent {
@@ -210,3 +262,69 @@ export const getAdminRosterReviews = (params?: {
   const qs = query.toString();
   return api.get<any[]>(`/admin/reports/roster-reviews${qs ? `?${qs}` : ''}`);
 };
+
+/**
+ * Download Admin Sections Summary PDF with active filters
+ */
+export const downloadAdminSectionsSummaryPdf = (
+  academicYearId?: string,
+  status?: string,
+  search?: string,
+) => {
+  const query = new URLSearchParams();
+  if (academicYearId) query.set('academicYearId', academicYearId);
+  if (status && status !== 'All') query.set('status', status);
+  if (search?.trim()) query.set('search', search.trim());
+  const qs = query.toString();
+  return downloadFile(`/admin/reports/sections/pdf${qs ? `?${qs}` : ''}`, 'Report_Summary.pdf');
+};
+
+/**
+ * Download Section Compiled Report Cards PDF with optional search filter
+ */
+export const downloadAdminSectionReportCardsPdf = (
+  classSectionId: string,
+  academicYearId: string,
+  search?: string,
+  fallbackFilename?: string,
+) => {
+  const query = new URLSearchParams();
+  query.set('academicYearId', academicYearId);
+  if (search?.trim()) query.set('search', search.trim());
+  const qs = query.toString();
+  return downloadFile(
+    `/admin/reports/sections/${classSectionId}/report-cards/pdf?${qs}`,
+    fallbackFilename || 'Section_Report_Cards.pdf',
+  );
+};
+
+/**
+ * Download Admin Roster Review Queue Table as PDF
+ */
+export const downloadAdminRosterReviewsPdf = (
+  academicYearId?: string,
+  status?: string,
+  search?: string,
+) => {
+  const query = new URLSearchParams();
+  if (academicYearId) query.set('academicYearId', academicYearId);
+  if (status && status !== 'All') query.set('status', status);
+  if (search?.trim()) query.set('search', search.trim());
+  const qs = query.toString();
+  return downloadFile(`/admin/reports/roster-reviews/pdf${qs ? `?${qs}` : ''}`, 'Roster_Review_Queue.pdf');
+};
+
+/**
+ * Download Official Approved Printable Roster as PDF
+ */
+export const downloadOfficialPrintRosterPdf = (
+  classSectionId: string,
+  academicYearId: string,
+  fallbackFilename?: string,
+) => {
+  return downloadFile(
+    `/admin/reports/roster/${classSectionId}/print/pdf?academicYearId=${academicYearId}`,
+    fallbackFilename || 'Official_Roster.pdf',
+  );
+};
+

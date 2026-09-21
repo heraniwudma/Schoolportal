@@ -3,14 +3,18 @@ import { useAuth } from '../../context/AuthContext';
 import ClassSchedule from '../../pages/student/ClassSchedule';
 import TeacherSchedule from '../../pages/teacher/TeacherSchedule';
 
-const ScheduleWrapper: React.FC = () => {
+interface ScheduleWrapperProps {
+  searchQuery?: string;
+}
+
+const ScheduleWrapper: React.FC<ScheduleWrapperProps> = ({ searchQuery = '' }) => {
   const { user } = useAuth();
 
   if (user?.role === 'teacher') {
-    return <TeacherSchedule />;
+    return <TeacherSchedule searchQuery={searchQuery} />;
   }
 
-  return <ClassSchedule />;
+  return <ClassSchedule searchQuery={searchQuery} />;
 };
 
 export default ScheduleWrapper;

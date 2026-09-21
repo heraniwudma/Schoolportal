@@ -31,8 +31,7 @@ export class MaterialsService {
     if (match) {
       const parts = match[1].split('-');
       const ref = parts.length > 2 ? parts[0] : match[1]; // aws-0-eu-west-1.pooler.supabase.com doesn't easily give ref
-      // Quick fix for the specific host: aws-0-eu-west-1.pooler.supabase.com
-      // The user database URL is: postgresql://postgres.jdwpgbubenazrdqohgrq:***@aws-0-eu-west-1.pooler.supabase.com:6543/postgres
+      // Extract project reference from connection string (e.g. postgresql://postgres.[project-ref]:***@host:6543/postgres)
       const userMatch = dbUrl.match(/postgres\.(.*?):/);
       if (userMatch) {
         return `https://${userMatch[1]}.supabase.co`;

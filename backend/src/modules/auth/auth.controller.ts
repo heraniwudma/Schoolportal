@@ -16,6 +16,8 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { AuthService } from './auth.service';
 
+import { ForgotPasswordDto, VerifyOtpDto, ResetPasswordDto } from './dto/password-reset.dto';
+
 @Controller('auth') // <-- Keep this as 'auth' so frontend login works at /auth/login
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
@@ -31,22 +33,30 @@ export class AuthController {
   }
 
   @Post('forgot-password')
-  async forgotPassword(@Body('email') email: string) {
-    return this.authService.forgotPassword(email);
+  async forgotPassword(@Body() body: ForgotPasswordDto, @Req() req: Request) {
+    const clientIp =
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+      req.ip ||
+      req.socket?.remoteAddress;
+    return this.authService.forgotPassword(body, clientIp);
   }
 
   @Post('verify-otp')
-  async verifyOtp(@Body('email') email: string, @Body('otp') otp: string) {
-    return this.authService.verifyOtp(email, otp);
+  async verifyOtp(@Body() body: VerifyOtpDto, @Req() req: Request) {
+    const clientIp =
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+      req.ip ||
+      req.socket?.remoteAddress;
+    return this.authService.verifyOtp(body, undefined, clientIp);
   }
 
   @Post('reset-password')
-  async resetPassword(
-    @Body('email') email: string, 
-    @Body('otp') otp: string, 
-    @Body('newPassword') newPassword: string
-  ) {
-    return this.authService.resetPassword(email, otp, newPassword);
+  async resetPassword(@Body() body: ResetPasswordDto, @Req() req: Request) {
+    const clientIp =
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+      req.ip ||
+      req.socket?.remoteAddress;
+    return this.authService.resetPassword(body, undefined, undefined, clientIp);
   }
 
   @Get('me/homeroom-context')

@@ -27,8 +27,10 @@ export class PerformanceInterceptor implements NestInterceptor {
           const duration = Date.now() - start;
           const statusCode = res.statusCode;
 
-          res.setHeader('X-Response-Time', `${duration}ms`);
-          res.setHeader('Server-Timing', `total;dur=${duration}`);
+          if (!res.headersSent) {
+            res.setHeader('X-Response-Time', `${duration}ms`);
+            res.setHeader('Server-Timing', `total;dur=${duration}`);
+          }
 
           if (duration >= 300) {
             this.logger.warn(

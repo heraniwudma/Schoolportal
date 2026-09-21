@@ -13,6 +13,8 @@ import {
   AlertTriangle,
   Lock,
   Check,
+  Search,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAcademicYears } from '../../hooks/useAcademicStructure';
@@ -23,6 +25,8 @@ import {
   ConsolidatedRosterData,
 } from '../../hooks/useHomeroom';
 import { saveHomeroomConduct, submitRosterToAdmin } from '../../api/adminReports';
+import { downloadConsolidatedRosterPdf } from '../../api/roster';
+
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -48,9 +52,16 @@ export default function HomeroomRosterRedesigned() {
   const { data: homeroomContext, isLoading: contextLoading, error: contextError } = useHomeroomContext();
   const { data: years = [], isLoading: yearsLoading } = useAcademicYears();
 
+  // Always use the section's own academic year ID so all downstream queries
+  // (roster, review status, conduct, submit) match the section's year exactly.
+  // Falls back to the current/first year from the years list only when the
+  // context hasn't loaded yet or the section carries no year.
   const currentYear = years.find((y) => y.isCurrent) || years[0];
   const sectionId = homeroomContext?.assignedSection?.id;
-  const yearId = currentYear?.id;
+  const yearId =
+    homeroomContext?.assignedSection?.academicYearId ??
+    homeroomContext?.academicYearId ??
+    currentYear?.id;
 
   // 2. Consolidated Roster Query
   const {
@@ -70,11 +81,24 @@ export default function HomeroomRosterRedesigned() {
   const reviewStatus = reviewStatusData?.status || 'DRAFT';
   const isConductEditable = reviewStatus === 'DRAFT' || reviewStatus === 'REJECTED';
 
-  // 4. Local Conduct State
   const [conductState, setConductState] = React.useState<Record<string, string>>({});
   const [savingConduct, setSavingConduct] = React.useState(false);
   const [submittingRoster, setSubmittingRoster] = React.useState(false);
   const [conductDirty, setConductDirty] = React.useState(false);
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const [isDownloadingPdf, setIsDownloadingPdf] = React.useState(false);
+
+
+  const filteredStudents = React.useMemo(() => {
+    if (!data?.students) return [];
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return data.students;
+    return data.students.filter((s) =>
+      (s.studentName || '').toLowerCase().includes(q) ||
+      (s.admissionNo || '').toLowerCase().includes(q) ||
+      (s.sex || '').toLowerCase() === q
+    );
+  }, [data?.students, searchQuery]);
 
   React.useEffect(() => {
     if (data?.students) {
@@ -87,12 +111,10 @@ export default function HomeroomRosterRedesigned() {
     }
   }, [data]);
 
-  const loading = contextLoading || yearsLoading || (rosterLoading && !data);
+  const loading = contextLoading || (yearsLoading && !yearId) || (rosterLoading && !data);
   const error =
-    (contextError as any)?.response?.data?.message ||
     (contextError as any)?.message ||
     (!contextLoading && !homeroomContext?.assignedSection ? 'No homeroom section assigned to your account' : '') ||
-    (rosterError as any)?.response?.data?.message ||
     (rosterError as any)?.message ||
     '';
 
@@ -103,7 +125,7 @@ export default function HomeroomRosterRedesigned() {
       await Promise.all([refetch(), refetchReviewStatus()]);
       toast.success('Roster refreshed');
     } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Refresh failed');
+      toast.error(err?.message ?? 'Refresh failed');
     }
   };
 
@@ -124,7 +146,7 @@ export default function HomeroomRosterRedesigned() {
       setConductDirty(false);
       await Promise.all([refetch(), refetchReviewStatus()]);
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Failed to save conduct');
+      toast.error(err?.message || 'Failed to save conduct');
     } finally {
       setSavingConduct(false);
     }
@@ -159,7 +181,7 @@ export default function HomeroomRosterRedesigned() {
         await saveHomeroomConduct(sectionId, yearId, conductState);
         setConductDirty(false);
       } catch (err: any) {
-        toast.error('Failed to save conduct before submission: ' + (err?.response?.data?.message || err.message));
+        toast.error('Failed to save conduct before submission: ' + (err?.message || 'Unknown error'));
         return;
       }
     }
@@ -170,7 +192,7 @@ export default function HomeroomRosterRedesigned() {
       toast.success('✓ Roster successfully submitted to Admin for review!');
       await Promise.all([refetch(), refetchReviewStatus()]);
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Failed to submit roster to admin');
+      toast.error(err?.message || 'Failed to submit roster to admin');
     } finally {
       setSubmittingRoster(false);
     }
@@ -241,6 +263,31 @@ export default function HomeroomRosterRedesigned() {
     a.download = `${data.section.name}-Consolidated-Roster.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!sectionId || !yearId) {
+      toast.error('No homeroom section or academic year selected.');
+      return;
+    }
+    if (!data || !data.students || data.students.length === 0) {
+      toast.warning('No class roster data available to download.');
+      return;
+    }
+    setIsDownloadingPdf(true);
+    try {
+      await downloadConsolidatedRosterPdf(
+        sectionId,
+        yearId,
+        searchQuery,
+        `Roster_${data.section?.name || 'Class'}.pdf`,
+      );
+      toast.success('Class roster PDF downloaded successfully.');
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to download class roster PDF');
+    } finally {
+      setIsDownloadingPdf(false);
+    }
   };
 
   // ── Render states ─────────────────────────────────────────────────────────
@@ -330,6 +377,19 @@ export default function HomeroomRosterRedesigned() {
             className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 transition-colors shadow-sm"
           >
             <Download className="w-4 h-4" /> Export CSV
+          </button>
+          <button
+            onClick={handleDownloadPdf}
+            disabled={isDownloadingPdf || rosterLoading || !data?.students?.length}
+            className="flex items-center gap-2 px-3 py-2 bg-blue-900 text-white rounded-lg text-sm font-semibold hover:bg-blue-800 disabled:opacity-50 transition-colors shadow-sm"
+            title="Download Consolidated Class Roster as PDF"
+          >
+            {isDownloadingPdf ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4" />
+            )}
+            Download PDF
           </button>
           {isConductEditable && (
             <button
@@ -439,41 +499,95 @@ export default function HomeroomRosterRedesigned() {
           </p>
         </div>
       ) : (
-        // ── Main table ──
-        <div className="bg-white border rounded-xl overflow-x-auto shadow-sm">
-          <table className="min-w-full border-collapse text-xs">
-            <thead>
-              <tr className="bg-gray-900 text-white">
-                <th className="border border-gray-700 p-2.5 text-center w-12 font-bold">No</th>
-                <th className="border border-gray-700 p-2.5 text-center w-28 font-bold">Adm No</th>
-                <th className="border border-gray-700 p-2.5 text-left min-w-[170px] font-bold">Student Name</th>
-                <th className="border border-gray-700 p-2.5 text-center w-12 font-bold">Age</th>
-                <th className="border border-gray-700 p-2.5 text-center w-12 font-bold">Sex</th>
-                <th className="border border-gray-700 p-2.5 text-center w-16 bg-gray-800 font-bold">Period</th>
+        <div className="space-y-4">
+          {/* Search toolbar */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-gray-200 shadow-sm no-print">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Class Roster:</span>
+              <span className="text-xs font-bold bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full">
+                {filteredStudents.length} of {data.students.length} Students
+              </span>
+            </div>
+            <div className="relative w-full sm:w-72">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search student name or adm no..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-9 pr-9 py-2 text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
 
-                {/* Dynamic Subject Columns */}
-                {data.subjects.map((subj) => (
-                  <th
-                    key={subj.id}
-                    className="border border-gray-700 p-2 text-center min-w-[100px] bg-gray-800"
-                  >
-                    <div className="font-bold text-xs leading-tight">{subj.name}</div>
-                    <div className="text-[10px] text-gray-300 font-normal mt-0.5">{subj.code}</div>
-                  </th>
-                ))}
+          {/* ── Main table ── */}
+          <div className="bg-white border rounded-xl overflow-x-auto shadow-sm">
+            <table className="min-w-full border-collapse text-xs">
+              <thead>
+                <tr className="bg-gray-900 text-white">
+                  <th className="border border-gray-700 p-2.5 text-center w-12 font-bold">No</th>
+                  <th className="border border-gray-700 p-2.5 text-center w-28 font-bold">Adm No</th>
+                  <th className="border border-gray-700 p-2.5 text-left min-w-[170px] font-bold">Student Name</th>
+                  <th className="border border-gray-700 p-2.5 text-center w-12 font-bold">Age</th>
+                  <th className="border border-gray-700 p-2.5 text-center w-12 font-bold">Sex</th>
+                  <th className="border border-gray-700 p-2.5 text-center w-16 bg-gray-800 font-bold">Period</th>
 
-                {/* Summary Columns */}
-                <th className="border border-gray-700 p-2.5 text-center w-16 bg-gray-800 font-bold">Sum</th>
-                <th className="border border-gray-700 p-2.5 text-center w-16 bg-gray-800 font-bold">Avg</th>
-                <th className="border border-gray-700 p-2.5 text-center w-14 bg-gray-800 font-bold">Rank</th>
-                <th className="border border-gray-700 p-2.5 text-center w-14 font-bold">Abs D</th>
-                <th className="border border-gray-700 p-2.5 text-center w-16 font-bold">Conduct</th>
-              </tr>
-            </thead>
+                  {/* Dynamic Subject Columns */}
+                  {data.subjects.map((subj) => (
+                    <th
+                      key={subj.id}
+                      className="border border-gray-700 p-2 text-center min-w-[100px] bg-gray-800"
+                    >
+                      <div className="font-bold text-xs leading-tight">{subj.name}</div>
+                      <div className="text-[10px] text-gray-300 font-normal mt-0.5">{subj.code}</div>
+                    </th>
+                  ))}
 
-            {data.students.map((student, sIdx) => {
-              const isStudentComplete = student.isComplete !== false;
-              const subjectScoreMap = new Map(student.subjectScores.map((sc) => [sc.subjectId, sc]));
+                  {/* Summary Columns */}
+                  <th className="border border-gray-700 p-2.5 text-center w-16 bg-gray-800 font-bold">Sum</th>
+                  <th className="border border-gray-700 p-2.5 text-center w-16 bg-gray-800 font-bold">Avg</th>
+                  <th className="border border-gray-700 p-2.5 text-center w-14 bg-gray-800 font-bold">Rank</th>
+                  <th className="border border-gray-700 p-2.5 text-center w-14 font-bold">Abs D</th>
+                  <th className="border border-gray-700 p-2.5 text-center w-16 font-bold">Conduct</th>
+                </tr>
+              </thead>
+
+              {filteredStudents.length === 0 ? (
+                <tbody>
+                  <tr>
+                    <td
+                      colSpan={6 + data.subjects.length + 5}
+                      className="p-12 text-center"
+                    >
+                      <div className="flex flex-col items-center justify-center max-w-sm mx-auto text-center">
+                        <Search className="w-10 h-10 text-gray-300 mb-3" />
+                        <h4 className="text-sm font-semibold text-gray-900 mb-1">No matching students found</h4>
+                        <p className="text-xs text-gray-500 mb-4">
+                          No students on this roster match "{searchQuery}". Check the spelling or clear the filter.
+                        </p>
+                        <button
+                          onClick={() => setSearchQuery('')}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          Clear Search
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              ) : (
+                filteredStudents.map((student, sIdx) => {
+                  const isStudentComplete = student.isComplete !== false;
+                  const subjectScoreMap = new Map(student.subjectScores.map((sc) => [sc.subjectId, sc]));
 
               return (
                 <tbody
@@ -644,13 +758,14 @@ export default function HomeroomRosterRedesigned() {
                             </td>
                           </>
                         )}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              );
-            })}
-          </table>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                );
+              }))}
+            </table>
+          </div>
         </div>
       )}
 

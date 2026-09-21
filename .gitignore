@@ -36,6 +36,19 @@ pnpm-debug.log*
 logs/
 *.log.*
 
+# One-off local maintenance scripts
+backend/patch*.js
+backend/seed-*.js
+backend/test-*.js
+backend/test-*.ts
+backend/scratch/
+scratch/
+
+# Build & Vite artifacts
+build.log
+*.timestamp-*.mjs
+*.timestamp-*.js
+
 # ─── OS & Editor artifacts ───────────────────────────────────────────────────
 .DS_Store
 **/.DS_Store

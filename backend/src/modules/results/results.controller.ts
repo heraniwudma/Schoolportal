@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Req, UseGuards, Param, Query } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Req, UseGuards, Param, Query } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -6,6 +6,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { ResultsService } from './results.service';
 import { ReturnSubjectDto, GetSubjectStatusDto } from './dto/correction-request.dto';
 import { CalculationService } from './calculation.service';
+import { GetGradeItemsDto, UpdateGradeItemDto } from './dto/grade-items.dto';
 
 @Controller('results')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -90,4 +91,24 @@ export class ResultsController {
   ) {
     return this.resultsService.getStudentResults(classSectionId, academicYearId, term, req.user.id);
   }
+
+  @Get('grade-items')
+  @Roles(Role.TEACHER, Role.ADMIN)
+  getGradeItems(
+    @Req() req: any,
+    @Query() dto: GetGradeItemsDto,
+  ) {
+    return this.resultsService.getGradeItems(dto, req.user.id);
+  }
+
+  @Patch('grade-items/:id')
+  @Roles(Role.TEACHER, Role.ADMIN)
+  updateGradeItem(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateGradeItemDto,
+  ) {
+    return this.resultsService.updateGradeItem(id, dto, req.user.id);
+  }
 }
+

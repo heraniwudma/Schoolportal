@@ -7,7 +7,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { ExamStatus, ExamSessionStatus } from '@prisma/client';
+import { ExamStatus, ExamSessionStatus, Role } from '@prisma/client';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -52,6 +52,9 @@ export class ExaminationsService {
         totalMarks: true,
         examDate: true,
         instructions: true,
+        rejectionReason: true,
+        isResubmitted: true,
+        resubmittedAt: true,
         windowStart: true,
         windowEnd: true,
         delayMinutes: true,
@@ -60,6 +63,17 @@ export class ExaminationsService {
         Subject: { select: { id: true, name: true, code: true } },
         Class: { select: { id: true, name: true } },
         ClassSection: { select: { id: true, name: true } },
+        questions: {
+          select: {
+            id: true,
+            text: true,
+            marks: true,
+            options: { select: { id: true, optionText: true, isCorrect: true } },
+          },
+        },
+        reviewHistory: {
+          orderBy: { createdAt: 'desc' },
+        },
       },
       orderBy: { createdAt: 'desc' },
       take: 100,
@@ -68,9 +82,10 @@ export class ExaminationsService {
 
   async createExamination(dto: any, userId?: string) {
     let teacherId: string | undefined;
+    let teacher: any = null;
     if (userId) {
-      const t = await this.prisma.teacher.findUnique({ where: { userId } });
-      if (t) teacherId = t.id;
+      teacher = await this.prisma.teacher.findUnique({ where: { userId } });
+      if (teacher) teacherId = teacher.id;
     }
     const subjectId = dto.subjectId || (typeof dto.subject === 'string' ? dto.subject : undefined);
     if (!subjectId) throw new BadRequestException('Subject is required');
@@ -78,10 +93,13 @@ export class ExaminationsService {
 
     const teachingAssignment = await this.prisma.sectionSubjectTeacher.findFirst({
       where: { teacherId, subjectId, classSectionId: dto.classSectionId },
+      include: { ClassSection: true },
     });
     if (!teachingAssignment) throw new BadRequestException('You are not assigned to this subject and section');
 
-    const classId = dto.classId || (await this.prisma.class.findFirst({ select: { id: true } }))?.id;
+    const classId =
+      dto.classId ||
+      (await this.prisma.class.findFirst({ select: { id: true } }))?.id;
     if (!classId) throw new BadRequestException('A class must be configured before creating an examination');
 
     const calculatedTotalMarks =
@@ -91,21 +109,24 @@ export class ExaminationsService {
 
     const examId = crypto.randomUUID();
     const now = new Date();
+    const targetStatus =
+      dto.status === 'DRAFT'    ? ExamStatus.DRAFT    :
+      dto.status === 'APPROVED' ? ExamStatus.APPROVED :
+      ExamStatus.PENDING;
+
     try {
       return await this.prisma.$transaction(async (tx) => {
-        return tx.examination.create({
+        const created = await tx.examination.create({
           data: {
             id: examId,
             title: dto.title || 'Untitled Examination',
             subjectId,
             classId,
             classSectionId: dto.classSectionId,
-            ...(teacherId ? { teacherId } : {}),
+            teacherId,
             duration: Number(dto.duration) || 60,
-            status:
-              dto.status === 'DRAFT'    ? ExamStatus.DRAFT    :
-              dto.status === 'APPROVED' ? ExamStatus.APPROVED :
-              ExamStatus.PENDING,
+            status: targetStatus,
+            instructions: dto.instructions !== undefined ? dto.instructions : null,
             totalMarks: calculatedTotalMarks,
             examDate: dto.examDate ? new Date(dto.examDate) : now,
             updatedAt: now,
@@ -113,6 +134,7 @@ export class ExaminationsService {
               create: (dto.questions || []).map((q: any) => ({
                 id: crypto.randomUUID(),
                 text: q.questionText || q.text || '',
+                marks: Number(q.marks) || 10,
                 options: {
                   create: (q.options || []).map((opt: any) => ({
                     id: crypto.randomUUID(),
@@ -123,32 +145,64 @@ export class ExaminationsService {
               })),
             },
           },
-          include: { questions: { include: { options: true } } },
+          include: {
+            Subject: true,
+            Class: true,
+            ClassSection: true,
+            questions: { include: { options: true } },
+            reviewHistory: true,
+          },
         });
-      });
+
+        if (targetStatus === ExamStatus.PENDING) {
+          await tx.examReviewHistory.create({
+            data: {
+              id: crypto.randomUUID(),
+              examId: created.id,
+              status: ExamStatus.PENDING,
+              action: 'SUBMITTED',
+              reason: 'Submitted for admin review',
+              actionById: userId,
+              actionByName: teacher ? `${teacher.firstName} ${teacher.lastName}`.trim() : undefined,
+              createdAt: now,
+            },
+          });
+        }
+
+        return created;
+      }, { timeout: 15000, maxWait: 10000 });
     } catch (error: any) {
       throw new InternalServerErrorException(`Failed to create examination: ${error.message}`);
     }
   }
 
   async updateExamination(id: string, dto: any, userId: string) {
-    const teacher = await this.prisma.teacher.findUnique({ where: { userId }, select: { id: true } });
+    const teacher = await this.prisma.teacher.findUnique({
+      where: { userId },
+      select: { id: true, firstName: true, lastName: true },
+    });
     const existing = await this.prisma.examination.findUnique({ where: { id } });
     if (!teacher || !existing || existing.teacherId !== teacher.id) {
       throw new UnauthorizedException('You cannot edit this examination');
     }
+
+    if (existing.status !== ExamStatus.DRAFT && existing.status !== ExamStatus.REJECTED) {
+      throw new BadRequestException('Only DRAFT or REJECTED examinations can be edited');
+    }
+
     if (dto.subjectId || dto.classSectionId) {
       const subjectId = dto.subjectId || existing.subjectId;
       const classSectionId = dto.classSectionId || existing.classSectionId;
       const assignment = await this.prisma.sectionSubjectTeacher.findFirst({
         where: { teacherId: teacher.id, subjectId, classSectionId },
+        include: { ClassSection: true },
       });
       if (!assignment) throw new BadRequestException('You are not assigned to this subject and section');
     }
 
     const updateData: any = {
       title: dto.title,
-      instructions: dto.instructions,
+      instructions: dto.instructions !== undefined ? dto.instructions : undefined,
       duration: dto.duration ? Number(dto.duration) : undefined,
       status: dto.status ? (dto.status as ExamStatus) : undefined,
       updatedAt: new Date(),
@@ -157,31 +211,174 @@ export class ExaminationsService {
     if (dto.classId)        updateData.classId        = dto.classId;
     if (dto.classSectionId) updateData.classSectionId = dto.classSectionId;
 
-    if (dto.questions) {
-      await this.prisma.question.deleteMany({ where: { examId: id } });
-      updateData.totalMarks = dto.questions.reduce((s: number, q: any) => s + (Number(q.marks) || 10), 0);
-      updateData.questions = {
-        create: dto.questions.map((q: any) => ({
-          id: crypto.randomUUID(),
-          text: q.questionText || q.text || '',
-          options: {
-            create: (q.options || []).map((opt: any) => ({
-              id: crypto.randomUUID(),
-              optionText: opt.optionText || opt.text || '',
-              isCorrect: Boolean(opt.isCorrect),
-            })),
-          },
-        })),
-      };
-    } else if (dto.totalMarks) {
-      updateData.totalMarks = Number(dto.totalMarks);
+    const isTransitioningToPending = dto.status === ExamStatus.PENDING;
+    if (isTransitioningToPending && existing.status === ExamStatus.REJECTED) {
+      updateData.isResubmitted = true;
+      updateData.resubmittedAt = new Date();
     }
 
-    return this.prisma.examination.update({
+    return this.prisma.$transaction(async (tx) => {
+      if (dto.questions) {
+        await tx.question.deleteMany({ where: { examId: id } });
+        updateData.totalMarks = dto.questions.reduce((s: number, q: any) => s + (Number(q.marks) || 10), 0);
+        updateData.questions = {
+          create: dto.questions.map((q: any) => ({
+            id: crypto.randomUUID(),
+            text: q.questionText || q.text || '',
+            marks: Number(q.marks) || 10,
+            options: {
+              create: (q.options || []).map((opt: any) => ({
+                id: crypto.randomUUID(),
+                optionText: opt.optionText || opt.text || '',
+                isCorrect: Boolean(opt.isCorrect),
+              })),
+            },
+          })),
+        };
+      } else if (dto.totalMarks) {
+        updateData.totalMarks = Number(dto.totalMarks);
+      }
+
+      const updated = await tx.examination.update({
+        where: { id },
+        data: updateData,
+        include: {
+          Subject: true,
+          Class: true,
+          ClassSection: true,
+          questions: { include: { options: true } },
+          reviewHistory: { orderBy: { createdAt: 'desc' } },
+        },
+      });
+
+      if (isTransitioningToPending) {
+        const action = existing.status === ExamStatus.REJECTED ? 'RESUBMITTED' : 'SUBMITTED';
+        await tx.examReviewHistory.create({
+          data: {
+            id: crypto.randomUUID(),
+            examId: id,
+            status: ExamStatus.PENDING,
+            action,
+            reason: dto.resubmissionNote || (action === 'RESUBMITTED' ? 'Resubmitted after addressing feedback' : 'Submitted for review'),
+            actionById: userId,
+            actionByName: `${teacher.firstName} ${teacher.lastName}`.trim(),
+            createdAt: new Date(),
+          },
+        });
+      }
+
+      return updated;
+    }, { timeout: 15000, maxWait: 10000 });
+  }
+
+  async resubmitExam(id: string, dto: any, userId: string) {
+    const teacher = await this.prisma.teacher.findUnique({
+      where: { userId },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    const existing = await this.prisma.examination.findUnique({
       where: { id },
-      data: updateData,
       include: { questions: { include: { options: true } } },
     });
+    if (!teacher || !existing || existing.teacherId !== teacher.id) {
+      throw new UnauthorizedException('You cannot resubmit this examination');
+    }
+    if (existing.status !== ExamStatus.REJECTED && existing.status !== ExamStatus.DRAFT) {
+      throw new BadRequestException('Only REJECTED or DRAFT examinations can be submitted to admin');
+    }
+
+    const title = dto.title || existing.title;
+    const subjectId = dto.subjectId || existing.subjectId;
+    const classSectionId = dto.classSectionId || existing.classSectionId;
+
+    if (!title?.trim()) throw new BadRequestException('Exam title is required');
+    if (!subjectId) throw new BadRequestException('Subject is required');
+    if (!classSectionId) throw new BadRequestException('Class section is required');
+
+    const assignment = await this.prisma.sectionSubjectTeacher.findFirst({
+      where: { teacherId: teacher.id, subjectId, classSectionId },
+      include: { ClassSection: true },
+    });
+    if (!assignment) throw new BadRequestException('You are not assigned to this subject and section');
+
+    const classId = dto.classId || existing.classId;
+
+    const questionsList = dto.questions || existing.questions;
+    if (!questionsList || questionsList.length === 0) {
+      throw new BadRequestException('At least one question is required to submit an examination');
+    }
+
+    for (let i = 0; i < questionsList.length; i++) {
+      const q = questionsList[i];
+      const qText = (q.questionText || q.text || '').trim();
+      if (!qText) throw new BadRequestException(`Question ${i + 1} text cannot be empty`);
+      const opts = q.options || [];
+      if (opts.length < 2) throw new BadRequestException(`Question ${i + 1} must have at least 2 options`);
+      const hasEmptyOpt = opts.some((o: any) => !(o.optionText || o.text || '').trim());
+      if (hasEmptyOpt) throw new BadRequestException(`All options for question ${i + 1} must be filled out`);
+      const hasCorrect = opts.some((o: any) => Boolean(o.isCorrect));
+      if (!hasCorrect) throw new BadRequestException(`Question ${i + 1} must have a designated correct answer`);
+    }
+
+    const totalMarks = questionsList.reduce((s: number, q: any) => s + (Number(q.marks) || 10), 0);
+    const now = new Date();
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.question.deleteMany({ where: { examId: id } });
+
+      const updated = await tx.examination.update({
+        where: { id },
+        data: {
+          title,
+          subjectId,
+          classId,
+          classSectionId,
+          instructions: dto.instructions !== undefined ? dto.instructions : existing.instructions,
+          duration: Number(dto.duration) || existing.duration || 60,
+          totalMarks,
+          status: ExamStatus.PENDING,
+          isResubmitted: true,
+          resubmittedAt: now,
+          updatedAt: now,
+          questions: {
+            create: questionsList.map((q: any) => ({
+              id: crypto.randomUUID(),
+              text: q.questionText || q.text || '',
+              marks: Number(q.marks) || 10,
+              options: {
+                create: (q.options || []).map((opt: any) => ({
+                  id: crypto.randomUUID(),
+                  optionText: opt.optionText || opt.text || '',
+                  isCorrect: Boolean(opt.isCorrect),
+                })),
+              },
+            })),
+          },
+        },
+        include: {
+          Subject: true,
+          Class: true,
+          ClassSection: true,
+          questions: { include: { options: true } },
+          reviewHistory: { orderBy: { createdAt: 'desc' } },
+        },
+      });
+
+      await tx.examReviewHistory.create({
+        data: {
+          id: crypto.randomUUID(),
+          examId: id,
+          status: ExamStatus.PENDING,
+          action: 'RESUBMITTED',
+          reason: dto.resubmissionNote || 'Resubmitted after addressing feedback',
+          actionById: userId,
+          actionByName: `${teacher.firstName} ${teacher.lastName}`.trim(),
+          createdAt: now,
+        },
+      });
+
+      return updated;
+    }, { timeout: 15000, maxWait: 10000 });
   }
 
   async getDrafts(userId: string) {
@@ -189,9 +386,65 @@ export class ExaminationsService {
     if (!teacher) throw new UnauthorizedException('Active user is not registered as a teacher');
     return this.prisma.examination.findMany({
       where: { status: ExamStatus.DRAFT, teacherId: teacher.id },
-      include: { Subject: true, Class: true, ClassSection: true, questions: { include: { options: true } } },
+      include: {
+        Subject: true,
+        Class: true,
+        ClassSection: true,
+        questions: {
+          include: { options: true },
+        },
+      },
       orderBy: { updatedAt: 'desc' },
     });
+  }
+
+  async findRejectedForTeacher(userId: string) {
+    const teacher = await this.prisma.teacher.findUnique({ where: { userId }, select: { id: true } });
+    if (!teacher) throw new UnauthorizedException('Active user is not registered as a teacher');
+    return this.prisma.examination.findMany({
+      where: { status: ExamStatus.REJECTED, teacherId: teacher.id },
+      include: {
+        Subject: true,
+        Class: true,
+        ClassSection: true,
+        questions: {
+          include: { options: true },
+        },
+        reviewHistory: {
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+
+  async getExaminationById(id: string, userId: string, role: string) {
+    const exam = await this.prisma.examination.findUnique({
+      where: { id },
+      include: {
+        Subject: true,
+        Class: true,
+        ClassSection: true,
+        questions: {
+          include: { options: true },
+        },
+        reviewHistory: {
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+    if (!exam) throw new NotFoundException('Examination not found');
+
+    if (role === Role.TEACHER) {
+      const teacher = await this.prisma.teacher.findUnique({ where: { userId }, select: { id: true } });
+      if (!teacher || exam.teacherId !== teacher.id) {
+        throw new UnauthorizedException('You do not have permission to view this examination');
+      }
+    } else if (role !== Role.ADMIN) {
+      throw new UnauthorizedException('Unauthorized to view full examination details');
+    }
+
+    return exam;
   }
 
   async deleteDraft(id: string, userId: string) {
@@ -241,6 +494,9 @@ export class ExaminationsService {
         examDate: true,
         status: true,
         instructions: true,
+        rejectionReason: true,
+        isResubmitted: true,
+        resubmittedAt: true,
         createdAt: true,
         updatedAt: true,
         Subject: { select: { id: true, name: true, code: true } },
@@ -258,42 +514,75 @@ export class ExaminationsService {
           select: {
             id: true,
             text: true,
+            marks: true,
             options: {
               select: { id: true, optionText: true, isCorrect: true },
             },
           },
         },
+        reviewHistory: {
+          orderBy: { createdAt: 'desc' },
+        },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { updatedAt: 'desc' },
       take: 50,
     });
   }
 
-  async reviewExam(id: string, status: 'APPROVED' | 'REJECTED', rejectionReason?: string) {
+  async reviewExam(id: string, status: 'APPROVED' | 'REJECTED', rejectionReason?: string, adminUserId?: string) {
     const exam = await this.prisma.examination.findUnique({ where: { id } });
     if (!exam) throw new NotFoundException('Examination not found');
     if (exam.status !== ExamStatus.PENDING) {
       throw new BadRequestException('Only PENDING exams can be reviewed');
     }
 
-    const instructionsUpdate =
-      status === 'REJECTED' && rejectionReason?.trim()
-        ? `[REJECTION_REASON]: ${rejectionReason.trim()}`
-        : undefined;
+    let adminName: string | undefined;
+    if (adminUserId) {
+      const admin = await this.prisma.user.findUnique({
+        where: { id: adminUserId },
+        select: { email: true },
+      });
+      adminName = admin?.email || 'Admin';
+    }
 
-    return this.prisma.examination.update({
-      where: { id },
-      data: {
-        status: status as ExamStatus,
-        ...(instructionsUpdate !== undefined ? { instructions: instructionsUpdate } : {}),
-      },
-      include: {
-        Subject:      { select: { id: true, name: true } },
-        Teacher:      { select: { firstName: true, lastName: true } },
-        Class:        { select: { id: true, name: true } },
-        ClassSection: { select: { id: true, name: true } },
-      },
-    });
+    if (status === 'REJECTED' && (!rejectionReason || !rejectionReason.trim())) {
+      throw new BadRequestException('A rejection reason is required when rejecting an examination');
+    }
+
+    const trimmedReason = rejectionReason?.trim();
+    const now = new Date();
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.examination.update({
+        where: { id },
+        data: {
+          status: status as ExamStatus,
+          rejectionReason: status === 'REJECTED' ? trimmedReason : null,
+          updatedAt: now,
+        },
+        include: {
+          Subject:      { select: { id: true, name: true } },
+          Teacher:      { select: { firstName: true, lastName: true } },
+          Class:        { select: { id: true, name: true } },
+          ClassSection: { select: { id: true, name: true } },
+        },
+      });
+
+      await tx.examReviewHistory.create({
+        data: {
+          id: crypto.randomUUID(),
+          examId: id,
+          status: status as ExamStatus,
+          action: status,
+          reason: trimmedReason || (status === 'APPROVED' ? 'Exam approved and cleared for publishing' : undefined),
+          actionById: adminUserId,
+          actionByName: adminName,
+          createdAt: now,
+        },
+      });
+
+      return updated;
+    }, { timeout: 15000, maxWait: 10000 });
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

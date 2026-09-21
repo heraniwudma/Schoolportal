@@ -34,7 +34,17 @@ export class ExaminationsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.TEACHER)
   getDrafts(@Req() req: any) {
-    return this.examinationsService.getDrafts(req.user.id);
+    const userId = req.user?.id || req.user?.sub;
+    return this.examinationsService.getDrafts(userId);
+  }
+
+  // ── Teacher: own rejected exams ────────────────────────────────────────────
+  @Get('rejected-for-teacher')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.TEACHER)
+  getRejectedForTeacher(@Req() req: any) {
+    const userId = req.user?.id || req.user?.sub;
+    return this.examinationsService.findRejectedForTeacher(userId);
   }
 
   // ── Teacher: own approved exams (ready to publish) ───────────────────────
@@ -42,7 +52,8 @@ export class ExaminationsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.TEACHER)
   getApprovedForTeacher(@Req() req: any) {
-    return this.examinationsService.findApprovedForTeacher(req.user.id);
+    const userId = req.user?.id || req.user?.sub;
+    return this.examinationsService.findApprovedForTeacher(userId);
   }
 
   // ── Teacher: already-published exams (deployed to students) ──────────────
@@ -50,7 +61,16 @@ export class ExaminationsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.TEACHER)
   getPublishedForTeacher(@Req() req: any) {
-    return this.examinationsService.findPublishedForTeacher(req.user.id);
+    const userId = req.user?.id || req.user?.sub;
+    return this.examinationsService.findPublishedForTeacher(userId);
+  }
+
+  // ── Teacher / Admin: single exam details ──────────────────────────────────
+  @Get('details/:id')
+  @UseGuards(JwtAuthGuard)
+  getExaminationDetails(@Param('id') id: string, @Req() req: any) {
+    const userId = req.user?.id || req.user?.sub;
+    return this.examinationsService.getExaminationById(id, userId, req.user?.role);
   }
 
   // ── Teacher: publish an APPROVED exam to students ─────────────────────────
@@ -199,7 +219,17 @@ export class ExaminationsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.TEACHER)
   updateExamination(@Param('id') id: string, @Body() dto: any, @Req() req: any) {
-    return this.examinationsService.updateExamination(id, dto, req.user.id);
+    const userId = req.user?.id || req.user?.sub;
+    return this.examinationsService.updateExamination(id, dto, userId);
+  }
+
+  // ── Teacher: resubmit rejected exam for admin review ───────────────────────
+  @Post(':id/resubmit')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.TEACHER)
+  resubmitExam(@Param('id') id: string, @Body() dto: any, @Req() req: any) {
+    const userId = req.user?.id || req.user?.sub;
+    return this.examinationsService.resubmitExam(id, dto, userId);
   }
 
   // ── Teacher: delete draft ─────────────────────────────────────────────────
@@ -207,7 +237,8 @@ export class ExaminationsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.TEACHER)
   deleteDraft(@Param('id') id: string, @Req() req: any) {
-    return this.examinationsService.deleteDraft(id, req.user?.sub || req.user?.id);
+    const userId = req.user?.id || req.user?.sub;
+    return this.examinationsService.deleteDraft(id, userId);
   }
 
   // ── Admin: review (approve/reject) ────────────────────────────────────────
@@ -217,8 +248,10 @@ export class ExaminationsController {
   reviewExam(
     @Param('id') id: string,
     @Body() body: { status: 'APPROVED' | 'REJECTED'; rejectionReason?: string },
+    @Req() req: any,
   ) {
-    return this.examinationsService.reviewExam(id, body.status, body.rejectionReason);
+    const adminUserId = req.user?.id || req.user?.sub;
+    return this.examinationsService.reviewExam(id, body.status, body.rejectionReason, adminUserId);
   }
 
   // ── Teacher: release / retract exam review & results ──────────────────────

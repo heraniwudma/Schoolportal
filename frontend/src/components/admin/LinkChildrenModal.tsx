@@ -116,12 +116,13 @@ export const LinkChildrenModal: React.FC<LinkChildrenModalProps> = ({
       // Search query
       if (!searchQuery.trim()) return true;
       const q = searchQuery.toLowerCase().trim();
-      const matchName = s.fullName.toLowerCase().includes(q);
-      const matchAdm = s.admissionNo.toLowerCase().includes(q);
-      const matchSection = s.classSectionName?.toLowerCase().includes(q);
-      const matchParent = s.parent?.fullName.toLowerCase().includes(q);
+      const matchName = (s.fullName || '').toLowerCase().includes(q);
+      const matchAdm = (s.admissionNo || '').toLowerCase().includes(q);
+      const matchSection = (s.classSectionName || '').toLowerCase().includes(q);
+      const matchGrade = (s.gradeLevelName || '').toLowerCase().includes(q);
+      const matchParent = (s.parent?.fullName || '').toLowerCase().includes(q);
 
-      return matchName || matchAdm || matchSection || matchParent;
+      return matchName || matchAdm || matchSection || matchGrade || matchParent;
     });
   }, [students, searchQuery, selectedSection]);
 
@@ -279,8 +280,18 @@ export const LinkChildrenModal: React.FC<LinkChildrenModalProps> = ({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search students by name, admission number, section..."
-              className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+              className="w-full pl-10 pr-9 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 rounded-full hover:bg-gray-200/50 transition-colors"
+                title="Clear search"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
           </div>
 
           <div className="sm:w-56">
@@ -309,8 +320,28 @@ export const LinkChildrenModal: React.FC<LinkChildrenModalProps> = ({
           ) : filteredStudents.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-gray-400 gap-2 text-center">
               <GraduationCap className="w-10 h-10 opacity-30" />
-              <p className="text-sm font-bold text-gray-600">No matching students found</p>
-              <p className="text-xs text-gray-400">Try adjusting your search terms or filter selection.</p>
+              <p className="text-sm font-bold text-gray-600">
+                {searchQuery.trim()
+                  ? `No students found matching "${searchQuery.trim()}"`
+                  : 'No matching students found'}
+              </p>
+              <p className="text-xs text-gray-400">
+                {searchQuery.trim() || selectedSection !== 'ALL'
+                  ? 'Try adjusting your search terms or class section filter.'
+                  : 'No students available to display.'}
+              </p>
+              {(searchQuery || selectedSection !== 'ALL') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSelectedSection('ALL');
+                  }}
+                  className="mt-2 px-3.5 py-1.5 text-xs font-semibold text-blue-900 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                >
+                  Reset filters
+                </button>
+              )}
             </div>
           ) : (
             filteredStudents.map((student) => {

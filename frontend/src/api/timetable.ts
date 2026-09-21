@@ -1,4 +1,4 @@
-import { api } from '../lib/api';
+import { api, downloadFile } from '../lib/api';
 
 export type DayOfWeek =
   | 'MONDAY'
@@ -220,4 +220,51 @@ export const timetableApi = {
   deleteEntry: (entryId: string): Promise<{ message: string }> => {
     return api.delete<{ message: string }>(`/timetable/entries/${encodeURIComponent(entryId)}`);
   },
+
+  downloadTeacherSchedulePdf: (params?: {
+    academicYearId?: string;
+    search?: string;
+    day?: string;
+  }): Promise<void> => {
+    const qs = new URLSearchParams();
+    if (params?.academicYearId) qs.append('academicYearId', params.academicYearId);
+    if (params?.search) qs.append('search', params.search);
+    if (params?.day) qs.append('day', params.day);
+    const qStr = qs.toString();
+    return downloadFile(`/timetable/me/teacher/pdf${qStr ? `?${qStr}` : ''}`, 'Teacher_Schedule.pdf');
+  },
+
+  downloadSectionSchedulePdf: (
+    classSectionId: string,
+    params?: {
+      academicYearId?: string;
+      search?: string;
+      day?: string;
+    },
+  ): Promise<void> => {
+    const qs = new URLSearchParams();
+    if (params?.academicYearId) qs.append('academicYearId', params.academicYearId);
+    if (params?.search) qs.append('search', params.search);
+    if (params?.day) qs.append('day', params.day);
+    const qStr = qs.toString();
+    return downloadFile(
+      `/timetable/section/${encodeURIComponent(classSectionId)}/pdf${qStr ? `?${qStr}` : ''}`,
+      'Class_Schedule.pdf',
+    );
+  },
+
+  downloadStudentSchedulePdf: (params?: {
+    academicYearId?: string;
+    search?: string;
+  }): Promise<void> => {
+    const qs = new URLSearchParams();
+    if (params?.academicYearId) qs.append('academicYearId', params.academicYearId);
+    if (params?.search) qs.append('search', params.search);
+    const qStr = qs.toString();
+    return downloadFile(`/timetable/me/student/pdf${qStr ? `?${qStr}` : ''}`, 'Student_Schedule.pdf');
+  },
 };
+
+export const downloadTeacherSchedulePdf = timetableApi.downloadTeacherSchedulePdf;
+export const downloadSectionSchedulePdf = timetableApi.downloadSectionSchedulePdf;
+export const downloadStudentSchedulePdf = timetableApi.downloadStudentSchedulePdf;

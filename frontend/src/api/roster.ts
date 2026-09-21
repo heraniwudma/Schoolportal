@@ -1,4 +1,4 @@
-import { api } from '../lib/api';
+import { api, downloadFile } from '../lib/api';
 
 export interface RosterStudent {
   id: string;
@@ -49,3 +49,25 @@ export const getEnrolledStudents = (academicYearId: string, classSectionId: stri
 export const enrollStudent = (data: { studentId: string; academicYearId: string; gradeLevelId: string; classSectionId: string; enrollmentDate: string; status?: string }) => {
   return api.post<any>('/roster/enroll', data);
 };
+
+export const updateStudentConduct = (studentId: string, classSectionId: string, academicYearId: string, conduct: string) => {
+  return api.patch<any>(`/roster/students/${studentId}/conduct`, { classSectionId, academicYearId, conduct });
+};
+
+/**
+ * Download Consolidated Class Roster as vector PDF
+ */
+export const downloadConsolidatedRosterPdf = (
+  classSectionId: string,
+  academicYearId: string,
+  search?: string,
+  fallbackFilename?: string,
+) => {
+  const query = new URLSearchParams();
+  query.set('classSectionId', classSectionId);
+  query.set('academicYearId', academicYearId);
+  if (search?.trim()) query.set('search', search.trim());
+  const qs = query.toString();
+  return downloadFile(`/roster/consolidated/pdf?${qs}`, fallbackFilename || 'Class_Roster.pdf');
+};
+

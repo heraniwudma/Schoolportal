@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Download, Upload, FileText, Video } from 'lucide-react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { Download, Upload, FileText, Video, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../lib/api';
 import { formatClassSection } from '../../lib/classSection';
@@ -16,6 +16,29 @@ export default function TeacherMaterials() {
   const [title, setTitle] = useState('');
   const [sectionId, setSectionId] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredAdminMaterials = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return adminMaterials;
+    return adminMaterials.filter((m) =>
+      (m.title || '').toLowerCase().includes(q) ||
+      (m.description || '').toLowerCase().includes(q) ||
+      (m.category || '').toLowerCase().includes(q) ||
+      (m.fileName || '').toLowerCase().includes(q)
+    );
+  }, [adminMaterials, searchQuery]);
+
+  const filteredMaterials = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return materials;
+    return materials.filter((m) =>
+      (m.title || '').toLowerCase().includes(q) ||
+      (m.description || '').toLowerCase().includes(q) ||
+      (m.category || '').toLowerCase().includes(q) ||
+      (m.fileName || '').toLowerCase().includes(q)
+    );
+  }, [materials, searchQuery]);
 
   const load = async () => {
     try {
@@ -111,39 +134,87 @@ export default function TeacherMaterials() {
             <button className="bg-blue-900 text-white rounded-lg px-4 py-2 font-semibold flex items-center justify-center gap-2 hover:bg-blue-800 transition-colors"><Upload className="w-4 h-4" />Upload for students</button>
           </form>
 
+          {/* Search bar for learning materials */}
+          {(materials.length > 0 || adminMaterials.length > 0) && (
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search learning materials by title, description, or file..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-white border border-gray-200 rounded-xl pl-9 pr-9 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-sm"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          )}
+
           {adminMaterials.length > 0 && (
             <div>
               <h3 className="text-lg font-bold text-gray-900 mb-4">📌 Admin Published Materials</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                {adminMaterials.map((material) => (
-                  <article key={material.id} className="bg-white border rounded-lg p-4 shadow-sm">
-                    <p className="text-xs uppercase text-blue-600 font-bold">{material.category || 'Material'}</p>
-                    <h4 className="font-bold text-gray-900 mt-1">{material.title}</h4>
-                    <p className="text-sm text-gray-500 mt-2">{material.description}</p>
-                    <button 
-                      onClick={() => download(material.id)} 
-                      className="mt-3 text-blue-800 font-semibold flex gap-2 hover:text-blue-600"
-                    >
-                      <Download className="w-4 h-4" />{material.fileName || 'Download'}
-                    </button>
-                  </article>
-                ))}
-              </div>
+              {filteredAdminMaterials.length === 0 ? (
+                <p className="text-xs text-gray-400 italic p-4 bg-white border rounded-xl">
+                  No admin published materials match "{searchQuery}".
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                  {filteredAdminMaterials.map((material) => (
+                    <article key={material.id} className="bg-white border rounded-lg p-4 shadow-sm">
+                      <p className="text-xs uppercase text-blue-600 font-bold">{material.category || 'Material'}</p>
+                      <h4 className="font-bold text-gray-900 mt-1">{material.title}</h4>
+                      <p className="text-sm text-gray-500 mt-2">{material.description}</p>
+                      <button 
+                        onClick={() => download(material.id)} 
+                        className="mt-3 text-blue-800 font-semibold flex gap-2 hover:text-blue-600"
+                      >
+                        <Download className="w-4 h-4" />{material.fileName || 'Download'}
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
           <div>
             <h3 className="text-lg font-bold text-gray-900 mb-4">📚 Class Materials</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {materials.map((material) => (
-                <article key={material.id} className="bg-white border rounded-xl p-5 shadow-sm">
-                  <p className="text-xs uppercase text-gray-400">{material.category || 'Material'}</p>
-                  <h3 className="font-bold text-gray-900">{material.title}</h3>
-                  <p className="text-sm text-gray-500 mt-2">{material.description}</p>
-                  <button onClick={() => download(material.id)} className="mt-4 text-blue-800 font-semibold flex gap-2 hover:text-blue-600"><Download className="w-4 h-4" />{material.fileName || 'Download'}</button>
-                </article>
-              ))}
-            </div>
+            {materials.length === 0 ? (
+              <div className="bg-white border rounded-xl p-8 text-center text-gray-400">
+                <FileText className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                <p className="font-semibold text-gray-500">No class materials uploaded yet</p>
+                <p className="text-xs mt-1">Use the upload form above to share documents with your class.</p>
+              </div>
+            ) : filteredMaterials.length === 0 ? (
+              <div className="bg-white border rounded-xl p-8 text-center text-gray-400">
+                <Search className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                <p className="font-semibold text-gray-700">No materials match "{searchQuery}"</p>
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="mt-2 text-xs font-bold text-blue-800 hover:underline"
+                >
+                  Clear Search
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {filteredMaterials.map((material) => (
+                  <article key={material.id} className="bg-white border rounded-xl p-5 shadow-sm">
+                    <p className="text-xs uppercase text-gray-400">{material.category || 'Material'}</p>
+                    <h3 className="font-bold text-gray-900">{material.title}</h3>
+                    <p className="text-sm text-gray-500 mt-2">{material.description}</p>
+                    <button onClick={() => download(material.id)} className="mt-4 text-blue-800 font-semibold flex gap-2 hover:text-blue-600"><Download className="w-4 h-4" />{material.fileName || 'Download'}</button>
+                  </article>
+                ))}
+              </div>
+            )}
           </div>
         </>
       )}

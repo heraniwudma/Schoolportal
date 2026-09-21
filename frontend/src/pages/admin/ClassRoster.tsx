@@ -13,6 +13,7 @@ import {
   X,
   Check,
   Clock,
+  Download,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useOutletContext, useNavigate } from 'react-router-dom';
@@ -23,10 +24,14 @@ import {
   approveRosterReview,
   rejectRosterReview,
   reopenRosterReview,
+  downloadAdminRosterReviewsPdf,
+  downloadOfficialPrintRosterPdf,
   AdminSectionSummary,
 } from '../../api/adminReports';
+import { downloadConsolidatedRosterPdf } from '../../api/roster';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+
 
 const PERIOD_ROWS = [
   { key: 'term1', label: '1st', bg: 'bg-white' },
@@ -68,6 +73,7 @@ const ClassRoster = () => {
 
   const [selectedSection, setSelectedSection] = useState<AdminSectionSummary | null>(null);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [modalStudentSearch, setModalStudentSearch] = useState('');
 
   // Sub-dialog states
   const [isApproveConfirmOpen, setIsApproveConfirmOpen] = useState(false);
@@ -77,7 +83,12 @@ const ClassRoster = () => {
   const [reopenReason, setReopenReason] = useState('');
   const [isActionLoading, setIsActionLoading] = useState(false);
 
+  const [isDownloadingQueue, setIsDownloadingQueue] = useState(false);
+  const [isDownloadingSectionRoster, setIsDownloadingSectionRoster] = useState(false);
+  const [isDownloadingOfficial, setIsDownloadingOfficial] = useState(false);
+
   const queryClient = useQueryClient();
+
 
   const academicYearId = selectedAcademicYearId || activeAcademicYearId;
 
@@ -103,14 +114,21 @@ const ClassRoster = () => {
     enabled: isReviewModalOpen && !!selectedSection?.id && !!academicYearId,
   });
 
-  const effectiveSearch = localSearch || globalSearchQuery || '';
+  const rawSearch = localSearch || globalSearchQuery || '';
+  const effectiveSearch = rawSearch.trim().toLowerCase();
 
   const filteredSections = sections.filter((sec) => {
-    const teacherName = sec.homeroomTeacher || '';
+    const teacherName = (sec.homeroomTeacher || '').toLowerCase();
+    const sectionName = (sec.displayName || '').toLowerCase();
+    const gradeName = (sec.gradeLevelName || '').toLowerCase();
+    const statusText = (sec.status || '').toLowerCase();
+
     const matchesSearch =
-      sec.displayName.toLowerCase().includes(effectiveSearch.toLowerCase()) ||
-      teacherName.toLowerCase().includes(effectiveSearch.toLowerCase()) ||
-      (sec.gradeLevelName && sec.gradeLevelName.toLowerCase().includes(effectiveSearch.toLowerCase()));
+      !effectiveSearch ||
+      sectionName.includes(effectiveSearch) ||
+      teacherName.includes(effectiveSearch) ||
+      gradeName.includes(effectiveSearch) ||
+      statusText.includes(effectiveSearch);
 
     const effectiveStatus = sec.reviewStatus || (
       sec.status === 'Submitted' ? 'SUBMITTED_TO_ADMIN' :
@@ -134,6 +152,7 @@ const ClassRoster = () => {
 
   const handleReviewClick = (section: AdminSectionSummary) => {
     setSelectedSection(section);
+    setModalStudentSearch('');
     setIsReviewModalOpen(true);
   };
 
@@ -237,7 +256,54 @@ const ClassRoster = () => {
     }
   };
 
+  const handleDownloadQueuePdf = async () => {
+    if (filteredSections.length === 0) {
+      toast.warning('No class rosters match the current filters to download.');
+      return;
+    }
+    setIsDownloadingQueue(true);
+    try {
+      await downloadAdminRosterReviewsPdf(academicYearId, statusFilter, localSearch || globalSearchQuery);
+      toast.success('Roster review queue PDF downloaded successfully.');
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to download roster review queue PDF');
+    } finally {
+      setIsDownloadingQueue(false);
+    }
+  };
+
+  const handleDownloadSectionRosterPdf = async () => {
+    if (!selectedSection) return;
+    setIsDownloadingSectionRoster(true);
+    try {
+      await downloadConsolidatedRosterPdf(
+        selectedSection.id,
+        academicYearId,
+        modalStudentSearch,
+        `Roster_${selectedSection.displayName || selectedSection.name}.pdf`,
+      );
+      toast.success('Class roster PDF downloaded successfully.');
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to download class roster PDF');
+    } finally {
+      setIsDownloadingSectionRoster(false);
+    }
+  };
+
+  const handleDownloadOfficialPdf = async (classSectionId: string) => {
+    setIsDownloadingOfficial(true);
+    try {
+      await downloadOfficialPrintRosterPdf(classSectionId, academicYearId);
+      toast.success('Official printable roster PDF downloaded successfully.');
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to download official roster PDF');
+    } finally {
+      setIsDownloadingOfficial(false);
+    }
+  };
+
   const currentReviewStatus = selectedSection?.reviewStatus || (
+
     selectedSection?.status === 'Submitted' ? 'SUBMITTED_TO_ADMIN' :
     selectedSection?.status === 'Approved' ? 'APPROVED' :
     selectedSection?.status === 'Rejected' ? 'REJECTED' : 'DRAFT'
@@ -254,6 +320,19 @@ const ClassRoster = () => {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={handleDownloadQueuePdf}
+            disabled={isDownloadingQueue || isLoadingSections}
+            className="flex items-center gap-2 px-4 py-2.5 bg-blue-900 text-white rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-blue-800 transition-all shadow-sm disabled:opacity-50"
+            title="Download Roster Review Queue PDF"
+          >
+            {isDownloadingQueue ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4" />
+            )}
+            Download PDF
+          </button>
           <button
             onClick={handleRefresh}
             disabled={isLoadingSections || isRefetchingSections}
@@ -301,8 +380,17 @@ const ClassRoster = () => {
               placeholder="Search section, grade, or teacher..."
               value={localSearch}
               onChange={(e) => setLocalSearch(e.target.value)}
-              className="w-full h-12 pl-11 pr-4 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-900/20 focus:bg-white transition-all font-medium"
+              className="w-full h-12 pl-11 pr-10 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-900/20 focus:bg-white transition-all font-medium"
             />
+            {localSearch && (
+              <button
+                onClick={() => setLocalSearch('')}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-200/50 transition-colors"
+                title="Clear search"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
         <div>
@@ -492,12 +580,28 @@ const ClassRoster = () => {
                   <td colSpan={10} className="px-6 py-12 text-center">
                     <div className="flex flex-col items-center justify-center text-gray-400">
                       <ClipboardList className="w-12 h-12 mb-3 opacity-20" />
-                      <p className="text-sm font-bold text-gray-900">No rosters found</p>
-                      <p className="text-xs mt-1">
-                        {academicYearId
-                          ? 'No class rosters match the selected filter.'
-                          : 'Please select an academic year to review rosters.'}
+                      <p className="text-sm font-bold text-gray-900">
+                        {effectiveSearch ? 'No matching rosters found' : 'No rosters found'}
                       </p>
+                      <p className="text-xs mt-1 text-gray-500">
+                        {effectiveSearch ? (
+                          <>
+                            No class rosters match &ldquo;<span className="font-semibold text-gray-700">{rawSearch.trim()}</span>&rdquo;.
+                          </>
+                        ) : academicYearId ? (
+                          'No class rosters match the selected filter.'
+                        ) : (
+                          'Please select an academic year to review rosters.'
+                        )}
+                      </p>
+                      {localSearch && (
+                        <button
+                          onClick={() => setLocalSearch('')}
+                          className="mt-3 px-3.5 py-1.5 text-xs font-semibold text-blue-900 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors"
+                        >
+                          Clear search
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -555,6 +659,20 @@ const ClassRoster = () => {
 
               {/* Top Action Buttons */}
               <div className="flex items-center gap-2.5">
+                <button
+                  onClick={handleDownloadSectionRosterPdf}
+                  disabled={isDownloadingSectionRoster || isLoadingRoster}
+                  className="px-3.5 py-2 bg-blue-900 hover:bg-blue-800 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-colors inline-flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+                  title="Download Consolidated Class Roster as PDF"
+                >
+                  {isDownloadingSectionRoster ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Download className="w-3.5 h-3.5" />
+                  )}
+                  Download PDF
+                </button>
+
                 {currentReviewStatus === 'SUBMITTED_TO_ADMIN' && (
                   <>
                     <button
@@ -574,6 +692,19 @@ const ClassRoster = () => {
 
                 {currentReviewStatus === 'APPROVED' && (
                   <>
+                    <button
+                      onClick={() => handleDownloadOfficialPdf(selectedSection.id)}
+                      disabled={isDownloadingOfficial}
+                      className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-colors inline-flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+                      title="Download Official Certified Paper Roster PDF"
+                    >
+                      {isDownloadingOfficial ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Download className="w-3.5 h-3.5" />
+                      )}
+                      Official PDF
+                    </button>
                     <button
                       onClick={() =>
                         navigate(
@@ -633,6 +764,46 @@ const ClassRoster = () => {
               </div>
             )}
 
+            {/* Modal Sub-bar with Student Search */}
+            {fullRosterData && fullRosterData.students && fullRosterData.students.length > 0 && (
+              <div className="px-6 py-3 bg-white border-b border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="text-xs font-semibold text-gray-500">
+                  Showing{' '}
+                  <span className="font-bold text-gray-900">
+                    {
+                      fullRosterData.students.filter((student: any) => {
+                        if (!modalStudentSearch.trim()) return true;
+                        const q = modalStudentSearch.trim().toLowerCase();
+                        const name = (student.studentName || '').toLowerCase();
+                        const adm = (student.admissionNo || '').toLowerCase();
+                        return name.includes(q) || adm.includes(q);
+                      }).length
+                    }
+                  </span>{' '}
+                  of {fullRosterData.students.length} students
+                </div>
+                <div className="relative w-full sm:w-72">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search student by name or ID..."
+                    value={modalStudentSearch}
+                    onChange={(e) => setModalStudentSearch(e.target.value)}
+                    className="w-full h-9 pl-9.5 pr-8 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-900/20 focus:bg-white transition-all font-medium"
+                  />
+                  {modalStudentSearch && (
+                    <button
+                      onClick={() => setModalStudentSearch('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
+                      title="Clear student search"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Main Modal Body: Authoritative 7-Row Table */}
             <div className="p-6 overflow-y-auto flex-1">
               {isLoadingRoster ? (
@@ -648,7 +819,36 @@ const ClassRoster = () => {
                     No active students are enrolled in {selectedSection.displayName} for this academic year.
                   </p>
                 </div>
-              ) : (
+              ) : (() => {
+                const filteredModalStudents = fullRosterData.students.filter((student: any) => {
+                  if (!modalStudentSearch.trim()) return true;
+                  const q = modalStudentSearch.trim().toLowerCase();
+                  const name = (student.studentName || '').toLowerCase();
+                  const adm = (student.admissionNo || '').toLowerCase();
+                  return name.includes(q) || adm.includes(q);
+                });
+
+                if (filteredModalStudents.length === 0) {
+                  return (
+                    <div className="border border-gray-200 rounded-2xl p-16 text-center text-gray-500">
+                      <Search className="w-10 h-10 mx-auto text-gray-300 mb-2" />
+                      <p className="font-bold text-gray-900 text-sm">
+                        No students found matching &ldquo;{modalStudentSearch.trim()}&rdquo;
+                      </p>
+                      <p className="text-xs mt-1 text-gray-500">
+                        Check the student name or admission number spelling.
+                      </p>
+                      <button
+                        onClick={() => setModalStudentSearch('')}
+                        className="mt-3 px-3.5 py-1.5 text-xs font-semibold text-blue-900 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors"
+                      >
+                        Clear search
+                      </button>
+                    </div>
+                  );
+                }
+
+                return (
                 <div className="border border-gray-300 rounded-2xl overflow-x-auto shadow-sm">
                   <table className="min-w-full border-collapse text-xs">
                     <thead>
@@ -680,7 +880,7 @@ const ClassRoster = () => {
                       </tr>
                     </thead>
 
-                    {fullRosterData.students.map((student: any, sIdx: number) => {
+                    {filteredModalStudents.map((student: any, sIdx: number) => {
                       const isStudentComplete = student.isComplete !== false;
                       const subjectScoreMap = new Map(
                         student.subjectScores.map((sc: any) => [sc.subjectId, sc]),
@@ -826,7 +1026,8 @@ const ClassRoster = () => {
                     })}
                   </table>
                 </div>
-              )}
+              );
+            })()}
             </div>
 
             {/* Modal Footer */}

@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
-import { Award, Download, GraduationCap, Printer } from 'lucide-react';
+import { Award, GraduationCap, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { APP_NAME } from '../../config/branding';
 import { getMyAttendance, getMyCourses, getMyResults, StudentSubjectResultItem, StudentGradeItem } from '../../api/students';
@@ -20,6 +20,20 @@ const ReportCard = () => {
   const { user } = useAuth();
   const { data: academicYears = [] } = useAcademicYears();
   const currentAcademicYear = academicYears.find((y) => y.isCurrent) || academicYears[0];
+
+  // Intercept keyboard print (Ctrl+P / Cmd+P) and save (Ctrl+S / Cmd+S)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 'P' || e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, true);
+    };
+  }, []);
 
   const { data: courses = [], isLoading: coursesLoading, isError: coursesError } = useQuery({ 
     queryKey: ['my-courses'], 
@@ -58,23 +72,33 @@ const ReportCard = () => {
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-12">
+      {/* Print restriction banner rendered only in print media */}
+      <div className="report-card-print-restriction-notice">
+        <h3 className="text-base font-bold text-red-800 uppercase tracking-wider">Printing Restricted</h3>
+        <p className="text-xs text-red-700 mt-1">
+          This academic report card is a secure, view-only record. Printing, downloading, and exporting are restricted for student data privacy and record integrity.
+        </p>
+      </div>
+
       <div className="flex items-center justify-between no-print">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Academic Report Card</h2>
           <p className="text-sm text-gray-500">Official student academic performance record.</p>
         </div>
-        <div className="flex gap-3">
-          <button 
-            onClick={() => window.print()} 
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-bold text-gray-700 hover:bg-gray-50 transition-colors cursor-pointer"
-          >
-            <Printer className="w-4 h-4" />
-            Print Report
-          </button>
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 border border-blue-200 text-blue-900 rounded-xl text-xs font-bold select-none shadow-xs">
+            <ShieldCheck className="w-4 h-4 text-blue-700" />
+            View-Only Protected Document
+          </span>
         </div>
       </div>
 
-      <div className="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden">
+      <div 
+        className="report-card-secure-view select-none bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden"
+        onContextMenu={(e) => e.preventDefault()}
+        onCopy={(e) => e.preventDefault()}
+        onDragStart={(e) => e.preventDefault()}
+      >
         <div className="p-8 bg-[#1e3a8a] text-white flex flex-col md:flex-row justify-between gap-8">
           <div className="flex gap-6">
             <div className="w-24 h-24 bg-white/10 rounded-2xl flex items-center justify-center backdrop-blur-sm shrink-0">

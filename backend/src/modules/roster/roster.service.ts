@@ -134,6 +134,31 @@ export class RosterService {
     return this.calculationService.calculateSectionRoster(academicYearId, classSectionId);
   }
 
+  async updateStudentConduct(
+    studentId: string,
+    classSectionId: string,
+    academicYearId: string,
+    conduct: string,
+  ) {
+    const normalizedConduct = (conduct || '').trim().toUpperCase();
+    if (!['A', 'B', 'C'].includes(normalizedConduct)) {
+      throw new BadRequestException('Conduct must be A, B, or C');
+    }
+
+    const enrollment = await this.prisma.studentEnrollment.findFirst({
+      where: { studentId, classSectionId, academicYearId, status: 'ACTIVE' },
+      select: { id: true },
+    });
+    if (!enrollment) {
+      throw new NotFoundException('Active student enrollment record not found');
+    }
+
+    return this.prisma.studentEnrollment.update({
+      where: { id: enrollment.id },
+      data: { conduct: normalizedConduct },
+    });
+  }
+
   async getRoster(academicYearId: string, classSectionId: string) {
     if (!academicYearId || !classSectionId) {
       throw new BadRequestException('Academic Year and Class Section are required');

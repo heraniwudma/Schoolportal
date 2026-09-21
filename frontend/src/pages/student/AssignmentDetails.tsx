@@ -172,6 +172,12 @@ export default function AssignmentDetails() {
               <CheckCircle2 className="h-5 w-5" />{status}
             </div>
             <p className="mt-1">Submitted {new Date(submission.createdAt).toLocaleString()}.</p>
+            {submission.content && (
+              <div className="mt-3 rounded-lg border border-green-200 bg-white/80 p-3.5 text-gray-800">
+                <p className="text-xs font-bold uppercase tracking-wider text-green-800 mb-1">Your Written Answer:</p>
+                <p className="whitespace-pre-wrap leading-relaxed">{submission.content}</p>
+              </div>
+            )}
             {submission.fileName && (
               <p className="mt-2 text-green-800">Submitted file: {submission.fileName}{submission.fileSize ? ` (${fileSize(submission.fileSize)})` : ''}</p>
             )}

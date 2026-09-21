@@ -8,11 +8,11 @@ import ChangePasswordForm from '../../components/account/ChangePasswordForm';
 export default function TeacherProfile() {
   const { updateProfile } = useAuth();
   const [account, setAccount] = useState<AccountProfile | null>(null);
-  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', loginId: '', staffId: '', phoneNumber: '', address: '' });
+  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', loginId: '', staffId: '', phoneNumber: '', address: '', qualification: '' });
 
   useEffect(() => { getMyAccount().then((data) => {
     setAccount(data);
-    setForm({ firstName: data.Teacher?.firstName || '', lastName: data.Teacher?.lastName || '', email: data.email || '', loginId: data.loginId, staffId: data.Teacher?.staffId || '', phoneNumber: data.Teacher?.phoneNumber || '', address: data.Teacher?.address || '' });
+    setForm({ firstName: data.Teacher?.firstName || '', lastName: data.Teacher?.lastName || '', email: data.email || '', loginId: data.loginId, staffId: data.Teacher?.staffId || '', phoneNumber: data.Teacher?.phoneNumber || '', address: data.Teacher?.address || '', qualification: data.Teacher?.qualification || '' });
   }).catch(() => toast.error('Could not load your account')); }, []);
 
   const save = async (event: React.FormEvent) => { event.preventDefault(); try {
@@ -38,7 +38,7 @@ export default function TeacherProfile() {
         </label>
       </div>
       <form onSubmit={save} className="bg-white border rounded-xl p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-        {([['firstName', 'First name'], ['lastName', 'Last name'], ['email', 'Email'], ['loginId', 'Login ID'], ['staffId', 'Staff ID'], ['phoneNumber', 'Phone number'], ['address', 'Address']] as const).map(([key, label]) => (
+        {([['firstName', 'First name'], ['lastName', 'Last name'], ['email', 'Email'], ['loginId', 'Login ID'], ['staffId', 'Staff ID'], ['phoneNumber', 'Phone number'], ['address', 'Address'], ['qualification', 'Qualification']] as const).map(([key, label]) => (
           <label key={key} className="text-sm font-medium">
             {label}
             <input type={key === 'email' ? 'email' : 'text'} value={form[key]} onChange={(event) => setForm({ ...form, [key]: event.target.value })} className="mt-1 w-full border rounded-lg px-3 py-2" />

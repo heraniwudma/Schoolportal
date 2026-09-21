@@ -11,11 +11,13 @@ import {
   Users, 
   AlertCircle, 
   RefreshCw, 
-  ArrowUpDown
+  ArrowUpDown,
+  Search,
+  X
 } from 'lucide-react';
 import { ChildSelector } from '../../components/parent/ChildSelector';
 import StatCard from '../../components/dashboard/StatCard';
-import { Link } from 'react-router-dom';
+import { Link, useOutletContext } from 'react-router-dom';
 import { useTranslation } from '../../i18n/LanguageContext';
 
 const ParentResults: React.FC = () => {
@@ -29,8 +31,12 @@ const ParentResults: React.FC = () => {
   } = useParent();
   const { t } = useTranslation();
 
+  const outletCtx = useOutletContext<{ searchQuery?: string } | null>();
+  const [localSearch, setLocalSearch] = useState('');
   const [quarterFilter, setQuarterFilter] = useState<string>('ALL');
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
+
+  const effectiveSearch = (localSearch || outletCtx?.searchQuery || '').trim().toLowerCase();
 
   // Query child results for active selected child
   const {
@@ -57,12 +63,22 @@ const ParentResults: React.FC = () => {
       });
     }
 
+    if (effectiveSearch) {
+      list = list.filter((g) => {
+        const subMatch = (g.subject || '').toLowerCase().includes(effectiveSearch);
+        const qMatch = String(g.quarter || '').toLowerCase().includes(effectiveSearch);
+        const letterMatch = (g.gradeLetter || '').toLowerCase() === effectiveSearch;
+        const scoreMatch = String(g.score || '').includes(effectiveSearch);
+        return subMatch || qMatch || letterMatch || scoreMatch;
+      });
+    }
+
     list.sort((a, b) => {
       return sortOrder === 'desc' ? b.score - a.score : a.score - b.score;
     });
 
     return list;
-  }, [resultsData?.grades, quarterFilter, sortOrder]);
+  }, [resultsData?.grades, quarterFilter, sortOrder, effectiveSearch]);
 
   const examAttempts = resultsData?.examAttempts || [];
 
@@ -249,6 +265,28 @@ const ParentResults: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            {/* Search Input */}
+            <div className="relative w-full sm:w-56">
+              <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search subject, score, grade..."
+                value={localSearch}
+                onChange={(e) => setLocalSearch(e.target.value)}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-8 pr-7 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-900/20 focus:bg-white transition-all text-gray-800 placeholder-gray-400"
+              />
+              {localSearch && (
+                <button
+                  type="button"
+                  onClick={() => setLocalSearch('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
+                  title="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
             {/* Quarter Filter */}
             <div className="flex bg-gray-100/80 p-1 rounded-xl text-xs font-semibold text-gray-600">
               {['ALL', '1', '2', '3', '4'].map((q) => (
@@ -304,7 +342,34 @@ const ParentResults: React.FC = () => {
                 </tr>
               )}
 
-              {!resultsLoading && !resultsError && filteredGrades.length === 0 && (
+              {!resultsLoading && !resultsError && resultsData?.grades && resultsData.grades.length > 0 && filteredGrades.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-6 py-12 text-center text-sm text-gray-500">
+                    <div className="flex flex-col items-center gap-2 max-w-sm mx-auto">
+                      <Search className="w-8 h-8 text-gray-300" />
+                      <span className="font-bold text-gray-700">No matching assessment grades</span>
+                      <p className="text-xs text-gray-400">
+                        {effectiveSearch
+                          ? `No grades found matching "${localSearch || outletCtx?.searchQuery}".`
+                          : `No grades found for quarter ${quarterFilter}.`}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLocalSearch('');
+                          setQuarterFilter('ALL');
+                        }}
+                        className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        Clear search
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )}
+
+              {!resultsLoading && !resultsError && (!resultsData?.grades || resultsData.grades.length === 0) && (
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center text-sm text-gray-500">
                     <div className="flex flex-col items-center gap-2 max-w-sm mx-auto">

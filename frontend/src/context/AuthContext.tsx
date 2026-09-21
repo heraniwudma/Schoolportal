@@ -61,11 +61,12 @@ const normalizeUser = (apiUser: AuthApiUser): User => ({
 
 const parseApiErrorMessage = async (response: Response) => {
   try {
-    const data = (await response.json()) as { message?: string | string[] };
+    const data = (await response.json()) as { message?: string | string[]; error?: string };
     if (Array.isArray(data.message)) {
-      return data.message.join(', ');
+      if (data.message.length === 1) return data.message[0];
+      return `Validation failed:\n• ${data.message.join('\n• ')}`;
     }
-    return data.message || 'Request failed';
+    return data.message || data.error || 'Request failed';
   } catch {
     return 'Request failed';
   }
@@ -113,9 +114,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!response.ok) {
           // Session expired or token invalid - clear stored data
           if (response.status === 401 || response.status === 403) {
-            console.warn('[Auth] Stored session expired or invalid');
-          } else {
-            console.error('[Auth] Failed to validate session:', response.status);
+            // Session expired silently
           }
           throw new Error('Session expired');
         }
@@ -125,8 +124,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(normalized);
         setToken(savedToken);
         localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(normalized));
-        console.log('[Auth] Session restored for user:', normalized.id);
-      } catch (error) {
+      } catch {
         clearStoredSession();
       } finally {
         setIsLoading(false);
@@ -154,13 +152,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (!response.ok) {
         const errorMessage = await parseApiErrorMessage(response);
-        // A failed login must not leave a stale persisted session for the
-        // startup restoration effect to retry on a subsequent render.
         if (!token) {
           clearStoredSession();
         }
-        // Log auth errors but don't spam console - only log once per attempt
-        console.warn(`[Auth] Login failed for identifier: ${identifier.substring(0, 3)}... (Status: ${response.status})`);
         return { success: false, error: errorMessage };
       }
 
@@ -170,12 +164,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setToken(data.accessToken);
       localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(normalizedUser));
       localStorage.setItem(TOKEN_STORAGE_KEY, data.accessToken);
-      console.log('[Auth] Login successful for user:', normalizedUser.id);
 
       return { success: true };
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Network error';
-      console.error(`[Auth] Login request failed: ${errorMsg}`);
+    } catch {
       return { success: false, error: 'An error occurred. Please check your connection and try again.' };
     }
   };

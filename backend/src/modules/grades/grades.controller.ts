@@ -1,7 +1,13 @@
-import { Controller, Post, Body, Get, Param, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, Get, Param, HttpException, HttpStatus, UseGuards } from '@nestjs/common';
+import { Role } from '@prisma/client';
 import { GradesService } from './grades.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 
 @Controller('grades')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(Role.TEACHER, Role.ADMIN)
 export class GradesController {
   constructor(private readonly gradesService: GradesService) {}
 

@@ -25,7 +25,6 @@ export class GradesService {
   
 
   async submitBatchGrades(dto: any) {
-    console.log('--- RECEIVED DTO FROM FRONTEND ---', JSON.stringify(dto, null, 2));
 
     // Normalize data: handles both single student payloads and batch arrays automatically
     let itemsToProcess = [];
@@ -109,7 +108,6 @@ export class GradesService {
       }
     }
 
-    console.log(`Successfully saved ${results.length} grades to Supabase table!`);
     return { success: true, count: results.length, data: results };
   }
 

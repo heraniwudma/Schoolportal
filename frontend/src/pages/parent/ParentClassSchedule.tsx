@@ -15,12 +15,14 @@ import {
   Layers,
   LayoutGrid,
   ListFilter,
-  Printer
+  Printer,
+  Search,
+  X
 } from 'lucide-react';
 import { ChildSelector } from '../../components/parent/ChildSelector';
 import StatCard from '../../components/dashboard/StatCard';
 import { Button } from '../../components/ui/button';
-import { Link } from 'react-router-dom';
+import { Link, useOutletContext } from 'react-router-dom';
 import { useTranslation } from '../../i18n/LanguageContext';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -63,8 +65,12 @@ export const ParentClassSchedule: React.FC = () => {
     return day;
   };
 
+  const outletCtx = useOutletContext<{ searchQuery?: string } | null>();
+  const [localSearch, setLocalSearch] = useState('');
   const [activeDayTab, setActiveDayTab] = useState<string>('Monday');
   const [viewMode, setViewMode] = useState<'grid' | 'cards'>('grid');
+
+  const effectiveSearch = (localSearch || outletCtx?.searchQuery || '').trim().toLowerCase();
 
   // Academic Year selection
   const {
@@ -128,10 +134,18 @@ export const ParentClassSchedule: React.FC = () => {
 
   // Day-filtered slots for cards view
   const activeDaySlots = useMemo(() => {
-    return normalizedSlots
-      .filter((s) => s.normalizedDay.toLowerCase() === activeDayTab.toLowerCase())
-      .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
-  }, [normalizedSlots, activeDayTab]);
+    let list = normalizedSlots.filter((s) => s.normalizedDay.toLowerCase() === activeDayTab.toLowerCase());
+    if (effectiveSearch) {
+      list = list.filter(
+        (s) =>
+          (s.subjectName || '').toLowerCase().includes(effectiveSearch) ||
+          (s.subjectCode || '').toLowerCase().includes(effectiveSearch) ||
+          (s.teacherName || '').toLowerCase().includes(effectiveSearch) ||
+          (s.roomNumber || '').toLowerCase().includes(effectiveSearch),
+      );
+    }
+    return list.sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+  }, [normalizedSlots, activeDayTab, effectiveSearch]);
 
   const handlePrint = () => {
     window.print();
@@ -365,7 +379,29 @@ export const ParentClassSchedule: React.FC = () => {
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Search Input */}
+            <div className="relative w-full sm:w-56">
+              <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search subject, teacher, room..."
+                value={localSearch}
+                onChange={(e) => setLocalSearch(e.target.value)}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-8 pr-7 py-1.5 text-xs outline-none focus:ring-2 focus:ring-blue-900/20 focus:bg-white transition-all text-gray-800 placeholder-gray-400"
+              />
+              {localSearch && (
+                <button
+                  type="button"
+                  onClick={() => setLocalSearch('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
+                  title="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
             {/* View Mode Toggle */}
             <div className="flex bg-gray-100/80 p-1 rounded-xl text-xs font-semibold text-gray-600">
               <button
@@ -447,10 +483,19 @@ export const ParentClassSchedule: React.FC = () => {
                         (s) => s.normalizedDay.toLowerCase() === day.toLowerCase() && s.timeLabel === time,
                       );
 
+                      const isMatch = session && effectiveSearch
+                        ? (
+                            (session.subjectName || '').toLowerCase().includes(effectiveSearch) ||
+                            (session.subjectCode || '').toLowerCase().includes(effectiveSearch) ||
+                            (session.teacherName || '').toLowerCase().includes(effectiveSearch) ||
+                            (session.roomNumber || '').toLowerCase().includes(effectiveSearch)
+                          )
+                        : true;
+
                       return (
                         <td key={`${day}-${time}`} className="px-4 py-4 align-top min-w-[180px]">
                           {session ? (
-                            <div className="bg-gradient-to-br from-blue-900 to-indigo-900 text-white p-4 rounded-2xl shadow-xs space-y-2 border-l-4 border-blue-400 transition-transform hover:-translate-y-0.5">
+                            <div className={`bg-gradient-to-br from-blue-900 to-indigo-900 text-white p-4 rounded-2xl shadow-xs space-y-2 border-l-4 border-blue-400 transition-all ${effectiveSearch && !isMatch ? 'opacity-25' : effectiveSearch && isMatch ? 'ring-2 ring-blue-400 shadow-md scale-[1.02]' : 'hover:-translate-y-0.5'}`}>
                               <div className="flex items-start justify-between gap-1">
                                 <h4 className="font-bold text-sm leading-snug">{session.subjectName}</h4>
                                 {session.subjectCode && session.subjectCode !== '—' && (
@@ -523,8 +568,22 @@ export const ParentClassSchedule: React.FC = () => {
             {/* Day Timeline Cards */}
             <div className="space-y-3">
               {activeDaySlots.length === 0 && (
-                <div className="p-8 text-center text-gray-400 text-xs bg-gray-50 rounded-2xl border border-gray-100">
-                  {t('parent.classSchedule.noClassesForDay', { day: getDayLabel(activeDayTab) })}
+                <div className="p-8 text-center text-gray-400 text-xs bg-gray-50 rounded-2xl border border-gray-100 space-y-2">
+                  <p>
+                    {effectiveSearch
+                      ? `No classes matching "${localSearch || outletCtx?.searchQuery}" on ${getDayLabel(activeDayTab)}.`
+                      : t('parent.classSchedule.noClassesForDay', { day: getDayLabel(activeDayTab) })}
+                  </p>
+                  {effectiveSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setLocalSearch('')}
+                      className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      Clear search
+                    </button>
+                  )}
                 </div>
               )}
 

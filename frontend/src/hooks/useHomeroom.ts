@@ -5,13 +5,19 @@ import { useAuth } from '../context/AuthContext';
 // ─── Shared Homeroom Types ───────────────────────────────────────────────────
 
 export interface HomeroomContextData {
-  teacherId: string;
+  teacherId: string | null;
   isHomeroomTeacher: boolean;
+  /** The academicYearId the section belongs to — use this for ALL homeroom queries. */
+  academicYearId: string | null;
   assignedSection: {
     id: string;
     name: string;
     grade?: string;
+    gradeLevel?: string;
     studentCount?: number;
+    enrolledCount?: number;
+    /** Section's own academicYearId — same as the top-level field. */
+    academicYearId?: string | null;
   } | null;
 }
 
@@ -107,8 +113,10 @@ export interface ReportCardData {
   promotedToGrade?: string;
   classSectionName: string;
   homeroomTeacher?: string;
+  reportDate?: string;
   subjectResults: Array<{
     subjectName: string;
+    subjectCode?: string;
     term1: number | null;
     term2: number | null;
     sem1Avg: number | null;
@@ -272,6 +280,11 @@ export interface RosterStatusResponse {
   submittedAt: string | null;
   reviewedAt: string | null;
   rejectionReason: string | null;
+  submissionType?: 'roster' | 'report-cards' | 'both' | null;
+  rosterSubmittedAt?: string | null;
+  reportCardSubmittedAt?: string | null;
+  isRosterSubmitted?: boolean;
+  isReportCardSubmitted?: boolean;
 }
 
 export function useRosterReviewStatus(sectionId?: string | null, yearId?: string | null) {

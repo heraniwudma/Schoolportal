@@ -105,11 +105,13 @@ export default function AdminVideoReview() {
 
   const filteredVideos = videos.filter((v) => {
     if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const titleMatch = v.title.toLowerCase().includes(q);
-      const teacherMatch = `${v.Teacher?.firstName} ${v.Teacher?.lastName}`.toLowerCase().includes(q);
+      const q = searchQuery.trim().toLowerCase();
+      const titleMatch = (v.title || '').toLowerCase().includes(q);
+      const descMatch = (v.description || '').toLowerCase().includes(q);
+      const teacherMatch = `${v.Teacher?.firstName || ''} ${v.Teacher?.lastName || ''}`.toLowerCase().includes(q);
       const subjectMatch = (v.Subject?.name || '').toLowerCase().includes(q);
-      return titleMatch || teacherMatch || subjectMatch;
+      const sectionMatch = (v.ClassSection?.name || '').toLowerCase().includes(q);
+      return titleMatch || descMatch || teacherMatch || subjectMatch || sectionMatch;
     }
     return true;
   });
@@ -195,8 +197,17 @@ export default function AdminVideoReview() {
               placeholder="Search title, teacher, subject..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              className="w-full pl-9 pr-8 py-2 bg-white border border-gray-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
             />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
+                title="Clear search"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           <button
@@ -219,14 +230,28 @@ export default function AdminVideoReview() {
       ) : filteredVideos.length === 0 ? (
         <div className="py-16 text-center bg-white rounded-3xl border border-dashed border-gray-200 p-8 space-y-3">
           <div className="w-14 h-14 rounded-2xl bg-gray-100 text-gray-400 flex items-center justify-center mx-auto">
-            <CheckCircle2 className="w-7 h-7" />
+            {searchQuery.trim() ? <Search className="w-7 h-7" /> : <CheckCircle2 className="w-7 h-7" />}
           </div>
-          <h3 className="font-bold text-gray-900 text-base">No video submissions in this view</h3>
+          <h3 className="font-bold text-gray-900 text-base">
+            {searchQuery.trim()
+              ? `No videos matching "${searchQuery.trim()}"`
+              : 'No video submissions in this view'}
+          </h3>
           <p className="text-xs text-gray-500 max-w-sm mx-auto">
-            {activeTab === 'PENDING_APPROVAL'
+            {searchQuery.trim()
+              ? 'Check your search terms or try switching tabs to view videos under other statuses.'
+              : activeTab === 'PENDING_APPROVAL'
               ? 'Great job! There are no pending teacher videos awaiting admin review.'
               : 'No videos found matching the selected filter.'}
           </p>
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="mt-2 px-4 py-2 bg-blue-50 text-blue-900 rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-blue-100 transition-colors"
+            >
+              Clear search
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-4">

@@ -173,6 +173,17 @@ export class StudentsService {
       };
     }
 
+    if (rawUrl.startsWith('/uploads/') || rawUrl.startsWith('uploads/') || rawUrl.startsWith('/')) {
+      const cleanPath = rawUrl.startsWith('/') ? rawUrl : `/${rawUrl}`;
+      const serverUrl = process.env.BACKEND_URL || 'http://localhost:3000';
+      const fullUrl = `${serverUrl}${cleanPath}`;
+      return {
+        url: fullUrl,
+        downloadUrl: fullUrl,
+        fileName: rawUrl.split('/').pop() || 'resource',
+      };
+    }
+
     const fileName = rawUrl.split('/').pop() || rawUrl;
     let pathInBucket = rawUrl;
     const match = rawUrl.match(/materials\/(.*)$/);
@@ -296,6 +307,22 @@ export class StudentsService {
 
       if (file && existing?.fileUrl && existing.fileUrl !== uploadedPath) {
         await this.usersService.removeSubmissionFile(existing.fileUrl);
+      }
+      try {
+        const studentAssignment = await this.prisma.studentAssignment.findFirst({
+          where: {
+            assignmentId,
+            OR: [{ studentId: student.id }, { studentLoginId: student.admissionNo }],
+          },
+        });
+        if (studentAssignment) {
+          await this.prisma.studentAssignment.update({
+            where: { id: studentAssignment.id },
+            data: { status: 'SUBMITTED' },
+          });
+        }
+      } catch {
+        // Ignore if StudentAssignment record is absent
       }
       return submission;
     } catch (error) {

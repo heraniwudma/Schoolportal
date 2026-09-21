@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
-import { CheckCircle2, AlertCircle, Clock, Users, Download, Printer, RefreshCw, RotateCcw, AlertTriangle, X } from 'lucide-react';
+
+import React, { useState, useMemo } from 'react';
+import { useOutletContext } from 'react-router-dom';
+import { CheckCircle2, AlertCircle, Clock, Users, Download, Printer, RefreshCw, RotateCcw, AlertTriangle, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../lib/api';
 import { useAcademicYears } from '../../hooks/useAcademicStructure';
@@ -64,6 +66,10 @@ const STATIC_TERMS = [
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function HomeroomSubmissionMatrix() {
+  const outletCtx = useOutletContext<{ searchQuery?: string } | null>();
+  const [localSearch, setLocalSearch] = useState('');
+  const effectiveSearch = (localSearch || outletCtx?.searchQuery || '').trim().toLowerCase();
+
   const [selectedTerm, setSelectedTerm] = useState('TERM_1');
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
 
@@ -78,7 +84,10 @@ export default function HomeroomSubmissionMatrix() {
 
   const currentYear = years.find((y) => y.isCurrent) || years[0];
   const sectionId = homeroomContext?.assignedSection?.id;
-  const yearId = currentYear?.id;
+  const yearId =
+    homeroomContext?.assignedSection?.academicYearId ??
+    homeroomContext?.academicYearId ??
+    currentYear?.id;
 
   // 2. Page Data Queries (React Query)
   const {
@@ -95,14 +104,12 @@ export default function HomeroomSubmissionMatrix() {
     refetch: refetchResults,
   } = useHomeroomStudentResults(sectionId, yearId, selectedTerm);
 
-  const loading = contextLoading || yearsLoading || (matrixLoading && !matrix);
+  const loading = contextLoading || (yearsLoading && !yearId) || (matrixLoading && !matrix);
   const refreshing = (matrixFetching || resultsFetching) && !matrixLoading;
 
   const error =
-    (contextError as any)?.response?.data?.message ||
     (contextError as any)?.message ||
     (!contextLoading && !homeroomContext?.assignedSection ? 'No homeroom section assigned to your account' : '') ||
-    (matrixError as any)?.response?.data?.message ||
     (matrixError as any)?.message ||
     '';
 
@@ -110,12 +117,28 @@ export default function HomeroomSubmissionMatrix() {
     setSelectedTerm(newTerm);
   };
 
+  const filteredSubjects = useMemo(() => {
+    if (!effectiveSearch || !matrix?.subjects) return matrix?.subjects || [];
+    return matrix.subjects.filter((s) => {
+      const subjectName = (s.subjectName || '').toLowerCase();
+      const subjectCode = (s.subjectCode || '').toLowerCase();
+      const teacherName = (s.teacherName || '').toLowerCase();
+      const status = (s.isSubmitted ? 'submitted' : 'pending').toLowerCase();
+      return (
+        subjectName.includes(effectiveSearch) ||
+        subjectCode.includes(effectiveSearch) ||
+        teacherName.includes(effectiveSearch) ||
+        status.includes(effectiveSearch)
+      );
+    });
+  }, [matrix?.subjects, effectiveSearch]);
+
   const handleRefresh = async () => {
     try {
       await Promise.all([refetchMatrix(), refetchResults()]);
       toast.success('Submission matrix refreshed');
     } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Refresh failed');
+      toast.error(err?.message ?? 'Refresh failed');
     }
   };
 
@@ -141,7 +164,7 @@ export default function HomeroomSubmissionMatrix() {
       setReturnReason('');
       await handleRefresh();
     } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || 'Failed to return subject';
+      const msg = err?.message || 'Failed to return subject';
       toast.error(msg);
     } finally {
       setSubmittingReturn(false);
@@ -237,33 +260,57 @@ export default function HomeroomSubmissionMatrix() {
         </div>
       </div>
 
-      {/* ── Term Selector ── */}
-      <div className="bg-white border rounded-lg p-4 no-print">
-        <label className="block text-sm font-semibold mb-2 text-gray-700">Select Term</label>
-        <div className="flex gap-2 flex-wrap">
-          {STATIC_TERMS.map((t) => (
+      {/* ── Term Selector & Search Toolbar ── */}
+      <div className="bg-white border rounded-2xl p-4 no-print flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
+        <div>
+          <label className="block text-xs font-bold uppercase tracking-wider mb-2 text-gray-500">Select Term</label>
+          <div className="flex gap-2 flex-wrap">
+            {STATIC_TERMS.map((t) => (
+              <button
+                key={t.code}
+                onClick={() => handleTermChange(t.code)}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold border transition-colors ${selectedTerm === t.code
+                    ? 'bg-blue-900 text-white border-blue-900 shadow-xs'
+                    : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                  }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Search Input Toolbar */}
+        <div className="relative w-full md:w-72 self-end">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            aria-label="Search subjects"
+            placeholder="Search subject, code, teacher..."
+            value={localSearch || outletCtx?.searchQuery || ''}
+            onChange={(e) => setLocalSearch(e.target.value)}
+            className="w-full pl-9 pr-8 py-2 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-900 focus:bg-white transition-colors"
+          />
+          {effectiveSearch && (
             <button
-              key={t.code}
-              onClick={() => handleTermChange(t.code)}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold border transition-colors ${
-                selectedTerm === t.code
-                  ? 'bg-blue-900 text-white border-blue-900'
-                  : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-              }`}
+              type="button"
+              onClick={() => setLocalSearch('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
+              title="Clear search"
+              aria-label="Clear search"
             >
-              {t.label}
+              <X className="w-3.5 h-3.5" />
             </button>
-          ))}
+          )}
         </div>
       </div>
 
       {/* ── Overall status banner ── */}
       <div
-        className={`rounded-lg p-6 text-white ${
-          matrix.allSubmitted
+        className={`rounded-lg p-6 text-white ${matrix.allSubmitted
             ? 'bg-gradient-to-r from-green-600 to-green-500'
             : 'bg-gradient-to-r from-amber-600 to-amber-500'
-        }`}
+          }`}
       >
         <div className="flex items-center justify-between">
           <div>
@@ -305,7 +352,24 @@ export default function HomeroomSubmissionMatrix() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {matrix.subjects.map((subject, idx) => (
+              {filteredSubjects.length === 0 && matrix.subjects.length > 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
+                    <div className="max-w-sm mx-auto space-y-2">
+                      <p className="text-sm font-bold text-gray-800">No subjects match &ldquo;{effectiveSearch}&rdquo;</p>
+                      <p className="text-xs text-gray-400">Try adjusting your keyword or reset your search.</p>
+                      <button
+                        type="button"
+                        onClick={() => setLocalSearch('')}
+                        className="mt-2 inline-flex items-center px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-50 text-blue-900 hover:bg-blue-100 transition-colors"
+                      >
+                        Clear search
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                filteredSubjects.map((subject, idx) => (
                 <React.Fragment key={subject.subjectId}>
                   <tr className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                     <td className="px-6 py-4">
@@ -350,9 +414,8 @@ export default function HomeroomSubmissionMatrix() {
                       <div className="flex items-center gap-2 justify-center">
                         <div className="w-20 h-2 bg-gray-200 rounded-full overflow-hidden">
                           <div
-                            className={`h-full rounded-full transition-all ${
-                              subject.isSubmitted ? 'bg-green-500' : 'bg-amber-400'
-                            }`}
+                            className={`h-full rounded-full transition-all ${subject.isSubmitted ? 'bg-green-500' : 'bg-amber-400'
+                              }`}
                             style={{ width: `${subject.completionPercentage}%` }}
                           />
                         </div>
@@ -428,11 +491,10 @@ export default function HomeroomSubmissionMatrix() {
                                       </td>
                                       <td className="border border-gray-300 p-2 text-center">
                                         <span
-                                          className={`px-2 py-0.5 rounded text-xs font-semibold ${
-                                            r.status === 'SUBMITTED'
+                                          className={`px-2 py-0.5 rounded text-xs font-semibold ${r.status === 'SUBMITTED'
                                               ? 'bg-green-100 text-green-800'
                                               : 'bg-yellow-100 text-yellow-800'
-                                          }`}
+                                            }`}
                                         >
                                           {r.status}
                                         </span>
@@ -448,7 +510,8 @@ export default function HomeroomSubmissionMatrix() {
                     </tr>
                   )}
                 </React.Fragment>
-              ))}
+              ))
+              )}
             </tbody>
           </table>
         )}

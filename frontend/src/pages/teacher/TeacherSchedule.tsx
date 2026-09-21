@@ -1,10 +1,12 @@
 import React, { useState, useMemo } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   Calendar,
   Clock,
   MapPin,
   Printer,
+  Download,
   RefreshCw,
   AlertCircle,
   Coffee,
@@ -12,7 +14,10 @@ import {
   Layers,
   GraduationCap,
   Sparkles,
+  Search,
+  X,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '../../components/ui/button';
 import { useAcademicYears } from '../../hooks/useAcademicStructure';
 import {
@@ -22,7 +27,12 @@ import {
 } from '../../hooks/useTimetable';
 import { teachersApi } from '../../api/teachers';
 import { WeeklyScheduleGrid } from '../../components/admin/timetable/WeeklyScheduleGrid';
-import { SchedulePeriod, TeacherScheduleLessonEntry } from '../../api/timetable';
+import {
+  SchedulePeriod,
+  TeacherScheduleLessonEntry,
+  downloadTeacherSchedulePdf,
+  downloadSectionSchedulePdf,
+} from '../../api/timetable';
 
 const DEFAULT_DAYS = [
   { key: 'MONDAY', label: 'Monday' },
@@ -36,7 +46,15 @@ function normalizeDayKey(day?: string): string {
   return (day || '').toUpperCase().trim();
 }
 
-export const TeacherSchedule: React.FC = () => {
+interface TeacherScheduleProps {
+  searchQuery?: string;
+}
+
+export const TeacherSchedule: React.FC<TeacherScheduleProps> = ({ searchQuery: propSearchQuery = '' }) => {
+  const outletCtx = useOutletContext<{ searchQuery?: string } | null>();
+  const [localSearch, setLocalSearch] = useState('');
+  const effectiveSearch = (localSearch || propSearchQuery || outletCtx?.searchQuery || '').trim().toLowerCase();
+
   // 1. View Mode: 'personal' (My Weekly Schedule) vs 'class' (Class Timetables)
   const [viewMode, setViewMode] = useState<'personal' | 'class'>('personal');
 
@@ -192,6 +210,46 @@ export const TeacherSchedule: React.FC = () => {
     window.print();
   };
 
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+
+  const handleDownloadPdf = async () => {
+    const hasEntries =
+      viewMode === 'personal'
+        ? !!teacherData?.entries && teacherData.entries.length > 0
+        : !!sectionScheduleData?.entries && sectionScheduleData.entries.length > 0;
+
+    if (!hasEntries) {
+      toast.error('No schedule entries available to download as PDF.');
+      return;
+    }
+
+    setIsDownloadingPdf(true);
+    try {
+      if (viewMode === 'personal') {
+        await downloadTeacherSchedulePdf({
+          academicYearId: selectedAcademicYearId || undefined,
+          search: effectiveSearch || undefined,
+        });
+        toast.success('Teaching schedule PDF downloaded successfully.');
+      } else {
+        if (!selectedSectionId) {
+          toast.error('Please select a class section to download.');
+          return;
+        }
+        await downloadSectionSchedulePdf(selectedSectionId, {
+          academicYearId: selectedAcademicYearId || undefined,
+          search: effectiveSearch || undefined,
+        });
+        toast.success('Class timetable PDF downloaded successfully.');
+      }
+    } catch (err: any) {
+      console.error('Failed to download schedule PDF:', err);
+      toast.error(err.message || 'Failed to download schedule PDF. Please try again.');
+    } finally {
+      setIsDownloadingPdf(false);
+    }
+  };
+
   const isLoading = loadingYears || loadingSchedule || loadingPeriods;
 
   return (
@@ -214,8 +272,32 @@ export const TeacherSchedule: React.FC = () => {
           </div>
         </div>
 
-        {/* Header Controls: Academic Year Selector + Print Action */}
+        {/* Header Controls: Search + Academic Year Selector + Print Action */}
         <div className="flex flex-wrap items-center gap-3 self-start md:self-auto">
+          {/* Schedule Search Bar */}
+          <div className="relative min-w-[200px] sm:w-60">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+            <input
+              type="text"
+              aria-label="Search schedule"
+              placeholder="Search subject, class, room..."
+              value={localSearch || propSearchQuery || outletCtx?.searchQuery || ''}
+              onChange={(e) => setLocalSearch(e.target.value)}
+              className="w-full pl-9 pr-8 py-1.5 text-xs bg-white border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-900 shadow-xs font-medium"
+            />
+            {effectiveSearch && (
+              <button
+                type="button"
+                onClick={() => setLocalSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
+                title="Clear search"
+                aria-label="Clear search"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
           {/* Academic Year Selector */}
           <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-2xl px-3 py-1.5 shadow-xs">
             <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
@@ -234,6 +316,30 @@ export const TeacherSchedule: React.FC = () => {
               ))}
             </select>
           </div>
+
+          {/* Download PDF Action */}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={
+              isDownloadingPdf ||
+              isLoading ||
+              (viewMode === 'personal'
+                ? !teacherData?.entries?.length
+                : !sectionScheduleData?.entries?.length)
+            }
+            onClick={handleDownloadPdf}
+            className="rounded-2xl text-xs font-bold border-gray-200 text-blue-900 hover:bg-blue-50/50 shadow-xs flex items-center gap-1.5"
+            aria-label="Download schedule as PDF"
+          >
+            {isDownloadingPdf ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-900" />
+            ) : (
+              <Download className="w-3.5 h-3.5 text-blue-900" />
+            )}
+            <span>{isDownloadingPdf ? 'Generating PDF...' : 'Download PDF'}</span>
+          </Button>
 
           {/* Print Action */}
           <Button
@@ -403,8 +509,52 @@ export const TeacherSchedule: React.FC = () => {
             </div>
           ) : (
             /* Weekly Teacher Schedule Grid */
-            <div className="overflow-x-auto rounded-3xl border border-gray-100 bg-white shadow-sm">
-              <table className="w-full text-left border-collapse min-w-[780px]">
+            <>
+              {(() => {
+                const matchingPersonalLessonsCount = teacherData?.entries?.filter((entry) => {
+                  if (!effectiveSearch) return true;
+                  return (
+                    (entry.subject?.name || '').toLowerCase().includes(effectiveSearch) ||
+                    (entry.subject?.code || '').toLowerCase().includes(effectiveSearch) ||
+                    (entry.classSection?.name || '').toLowerCase().includes(effectiveSearch) ||
+                    (entry.classSection?.gradeLevel || '').toLowerCase().includes(effectiveSearch) ||
+                    (entry.classSection?.effectiveRoom || '').toLowerCase().includes(effectiveSearch)
+                  );
+                }).length ?? 0;
+
+                if (effectiveSearch && matchingPersonalLessonsCount === 0) {
+                  return (
+                    <div className="bg-amber-50/70 border border-amber-200 rounded-2xl p-4 text-xs text-amber-900 flex items-center justify-between gap-2 shadow-xs">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>No teaching lessons match &ldquo;{effectiveSearch}&rdquo; in your personal schedule.</span>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setLocalSearch('')}
+                        className="text-amber-800 hover:text-amber-950 text-xs font-bold h-7 px-2.5"
+                      >
+                        Clear search
+                      </Button>
+                    </div>
+                  );
+                }
+
+                if (effectiveSearch && matchingPersonalLessonsCount > 0) {
+                  return (
+                    <div className="text-xs text-blue-900 bg-blue-50 border border-blue-200/80 rounded-xl px-3 py-2 font-medium flex items-center justify-between">
+                      <span>Found {matchingPersonalLessonsCount} matching {matchingPersonalLessonsCount === 1 ? 'lesson' : 'lessons'} for &ldquo;{effectiveSearch}&rdquo; (highlighted below)</span>
+                      <button type="button" onClick={() => setLocalSearch('')} className="text-blue-700 hover:text-blue-900 text-xs font-bold underline cursor-pointer">
+                        Clear
+                      </button>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+              <div className="overflow-x-auto rounded-3xl border border-gray-100 bg-white shadow-sm">
+                <table className="w-full text-left border-collapse min-w-[780px]">
                 {/* Table Header */}
                 <thead>
                   <tr className="bg-gray-50/80 border-b border-gray-100">
@@ -491,8 +641,23 @@ export const TeacherSchedule: React.FC = () => {
                               key={cellKey}
                               className="px-3 py-3 align-top border-r border-gray-50 last:border-r-0"
                             >
-                              {lesson ? (
-                                <div className="w-full text-left bg-blue-900/95 text-white p-3.5 rounded-2xl shadow-sm space-y-2 border-l-4 border-blue-400">
+                              {lesson ? (() => {
+                                const lessonMatches = !effectiveSearch || (
+                                  (lesson.subject?.name || '').toLowerCase().includes(effectiveSearch) ||
+                                  (lesson.subject?.code || '').toLowerCase().includes(effectiveSearch) ||
+                                  (lesson.classSection?.name || '').toLowerCase().includes(effectiveSearch) ||
+                                  (lesson.classSection?.gradeLevel || '').toLowerCase().includes(effectiveSearch) ||
+                                  (lesson.classSection?.effectiveRoom || '').toLowerCase().includes(effectiveSearch)
+                                );
+
+                                return (
+                                <div className={`w-full text-left bg-blue-900/95 text-white p-3.5 rounded-2xl shadow-sm space-y-2 border-l-4 transition-all ${
+                                  effectiveSearch
+                                    ? lessonMatches
+                                      ? 'border-blue-300 ring-2 ring-blue-400 shadow-lg scale-[1.02]'
+                                      : 'border-blue-400 opacity-25 grayscale-[70%]'
+                                    : 'border-blue-400'
+                                }`}>
                                   {/* Subject Title & Code */}
                                   <div className="flex items-start justify-between gap-1">
                                     <span className="text-xs font-bold leading-tight block line-clamp-2">
@@ -522,7 +687,8 @@ export const TeacherSchedule: React.FC = () => {
                                     </div>
                                   )}
                                 </div>
-                              ) : (
+                                );
+                              })() : (
                                 <div className="w-full h-24 bg-gray-50/30 rounded-2xl border border-dashed border-gray-200/50 flex items-center justify-center text-gray-300 text-xs font-medium">
                                   —
                                 </div>
@@ -536,6 +702,7 @@ export const TeacherSchedule: React.FC = () => {
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </div>
       ) : (
@@ -617,13 +784,75 @@ export const TeacherSchedule: React.FC = () => {
               </p>
             </div>
           ) : (
-            <WeeklyScheduleGrid
-              periods={sectionScheduleData.periods || periods}
-              entries={sectionScheduleData.entries}
-              sectionName={sectionScheduleData.classSection?.name}
-              roomNumber={sectionScheduleData.classSection?.roomNumber}
-              readOnly={true}
-            />
+            <>
+              {(() => {
+                const matchingSectionEntriesCount = sectionScheduleData.entries.filter((entry) => {
+                  if (!effectiveSearch) return true;
+                  return (
+                    (entry.subject?.name || '').toLowerCase().includes(effectiveSearch) ||
+                    (entry.subject?.code || '').toLowerCase().includes(effectiveSearch) ||
+                    (entry.teacher?.firstName || '').toLowerCase().includes(effectiveSearch) ||
+                    (entry.teacher?.lastName || '').toLowerCase().includes(effectiveSearch) ||
+                    (entry.effectiveRoom || entry.roomOverride || sectionScheduleData.classSection?.roomNumber || '').toLowerCase().includes(effectiveSearch)
+                  );
+                }).length;
+
+                if (effectiveSearch && matchingSectionEntriesCount === 0) {
+                  return (
+                    <div className="bg-amber-50/70 border border-amber-200 rounded-2xl p-4 text-xs text-amber-900 flex items-center justify-between gap-2 shadow-xs">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>No scheduled lessons match &ldquo;{effectiveSearch}&rdquo; in this class timetable.</span>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setLocalSearch('')}
+                        className="text-amber-800 hover:text-amber-950 text-xs font-bold h-7 px-2.5"
+                      >
+                        Clear search
+                      </Button>
+                    </div>
+                  );
+                }
+
+                if (effectiveSearch && matchingSectionEntriesCount > 0) {
+                  return (
+                    <div className="text-xs text-blue-900 bg-blue-50 border border-blue-200/80 rounded-xl px-3 py-2 font-medium flex items-center justify-between">
+                      <span>Found {matchingSectionEntriesCount} matching {matchingSectionEntriesCount === 1 ? 'lesson' : 'lessons'} for &ldquo;{effectiveSearch}&rdquo; (highlighted below)</span>
+                      <button type="button" onClick={() => setLocalSearch('')} className="text-blue-700 hover:text-blue-900 text-xs font-bold underline cursor-pointer">
+                        Clear
+                      </button>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+              <WeeklyScheduleGrid
+                periods={sectionScheduleData.periods || periods}
+                entries={sectionScheduleData.entries}
+                sectionName={sectionScheduleData.classSection?.name}
+                roomNumber={sectionScheduleData.classSection?.roomNumber}
+                readOnly={true}
+                customCardClass={(day, period, entry) => {
+                  if (!effectiveSearch || !entry) return '';
+                  const subjectName = (entry.subject?.name || '').toLowerCase();
+                  const subjectCode = (entry.subject?.code || '').toLowerCase();
+                  const teacherFirst = (entry.teacher?.firstName || '').toLowerCase();
+                  const teacherLast = (entry.teacher?.lastName || '').toLowerCase();
+                  const room = (entry.effectiveRoom || entry.roomOverride || sectionScheduleData.classSection?.roomNumber || '').toLowerCase();
+                  const matches =
+                    subjectName.includes(effectiveSearch) ||
+                    subjectCode.includes(effectiveSearch) ||
+                    teacherFirst.includes(effectiveSearch) ||
+                    teacherLast.includes(effectiveSearch) ||
+                    room.includes(effectiveSearch);
+                  return matches
+                    ? 'ring-2 ring-blue-600 bg-blue-50/50 shadow-md font-semibold transition-all scale-[1.01]'
+                    : 'opacity-30 grayscale-[60%] transition-opacity';
+                }}
+              />
+            </>
           )}
         </div>
       )}

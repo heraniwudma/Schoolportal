@@ -18,7 +18,8 @@ export class TeacherAssignmentsService {
       where: { academicYearId: yearId },
       include: {
         GradeLevel: true,
-        homeroomTeacher: true,
+        // "GeneralTeacher" is the homeroom teacher — stored as ClassSection.teacherId
+        Teacher: true,
       },
       orderBy: [
         { GradeLevel: { gradeNumber: 'asc' } },
@@ -27,14 +28,14 @@ export class TeacherAssignmentsService {
     });
 
     return sections.map(sec => ({
-      id: sec.id, 
+      id: sec.id,
       classSectionId: sec.id,
       grade: sec.GradeLevel?.name || 'Unknown Grade',
       section: sec.name,
-      teacher: sec.homeroomTeacher ? {
-        id: sec.homeroomTeacher.id,
-        name: `${sec.homeroomTeacher.firstName} ${sec.homeroomTeacher.lastName}`,
-        staffId: sec.homeroomTeacher.staffId
+      teacher: sec.Teacher ? {
+        id: sec.Teacher.id,
+        name: `${sec.Teacher.firstName} ${sec.Teacher.lastName}`,
+        staffId: sec.Teacher.staffId
       } : null,
       academicYearId: sec.academicYearId
     }));
@@ -179,13 +180,32 @@ export class TeacherAssignmentsService {
   }
 
   async getTeacherPermissions(userId: string) {
+    // Resolve current year (fall back to most recent) so we never expose a
+    // stale homeroom section from a previous academic year.
+    const currentYear = await (async () => {
+      const y = await this.prisma.academicYear.findFirst({
+        where: { isCurrent: true },
+        select: { id: true },
+      });
+      if (y) return y;
+      return this.prisma.academicYear.findFirst({
+        orderBy: { startDate: 'desc' },
+        select: { id: true },
+      });
+    })();
+
     const teacher = await this.prisma.teacher.findUnique({
       where: { userId },
       include: {
-        homeroomSections: {
+        // ClassSection[] via "GeneralTeacher" relation = homeroom sections
+        ClassSection: {
+          where: currentYear ? { academicYearId: currentYear.id } : undefined,
           include: {
             GradeLevel: true,
-            students: true,
+            students: {
+              where: { status: 'ACTIVE' },
+              select: { id: true },
+            },
           },
         },
       },
@@ -195,8 +215,8 @@ export class TeacherAssignmentsService {
       throw new NotFoundException('Teacher profile not found');
     }
 
-    const isHomeroomTeacher = teacher.homeroomSections.length > 0;
-    const section = isHomeroomTeacher ? teacher.homeroomSections[0] : null;
+    const isHomeroomTeacher = teacher.ClassSection.length > 0;
+    const section = isHomeroomTeacher ? teacher.ClassSection[0] : null;
 
     return {
       isHomeroomTeacher,

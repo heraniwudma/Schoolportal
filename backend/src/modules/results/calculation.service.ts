@@ -349,7 +349,8 @@ export class CalculationService {
       where: { id: classSectionId },
       include: {
         GradeLevel: { select: { id: true, name: true } },
-        homeroomTeacher: { select: { firstName: true, lastName: true } },
+        // Homeroom teacher stored via ClassSection.teacherId ("GeneralTeacher")
+        Teacher: { select: { firstName: true, lastName: true } },
       },
     });
     if (!section) {
@@ -524,8 +525,8 @@ export class CalculationService {
         id: section.id,
         name: section.name,
         grade: section.GradeLevel?.name,
-        homeroomTeacher: section.homeroomTeacher
-          ? `${section.homeroomTeacher.firstName} ${section.homeroomTeacher.lastName}`.trim()
+        homeroomTeacher: section.Teacher
+          ? `${section.Teacher.firstName} ${section.Teacher.lastName}`.trim()
           : null,
       },
       terms: ['TERM_1', 'TERM_2', 'TERM_3', 'TERM_4'],

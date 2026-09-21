@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { GraduationCap, TrendingUp, BookOpen, Award } from 'lucide-react';
+import { GraduationCap, TrendingUp, BookOpen, Award, Search, X } from 'lucide-react';
+import { useOutletContext } from 'react-router-dom';
 import { getMyResults, StudentGradeItem, StudentSubjectResultItem } from '../../api/students';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 import { cn } from '../../lib/utils';
@@ -13,7 +14,11 @@ function getLetter(pct: number): string {
   return 'F';
 }
 
-const Results = () => {
+const Results = ({ searchQuery: propSearchQuery = '' }: { searchQuery?: string } = {}) => {
+  const outletCtx = useOutletContext<{ searchQuery?: string } | null>();
+  const [localSearch, setLocalSearch] = useState('');
+  const effectiveSearch = (localSearch || propSearchQuery || outletCtx?.searchQuery || '').trim().toLowerCase();
+
   const { data, isLoading, isError } = useQuery({
     queryKey: ['my-results'],
     queryFn: getMyResults,
@@ -24,6 +29,28 @@ const Results = () => {
   const grades: StudentGradeItem[] = data?.grades || [];
   const subjectResults: StudentSubjectResultItem[] = data?.subjectResults || [];
 
+  const filteredSubjectResults = subjectResults.filter((result) => {
+    if (!effectiveSearch) return true;
+    const nameMatch = (result.subjectName || '').toLowerCase().includes(effectiveSearch);
+    const codeMatch = (result.subjectCode || '').toLowerCase().includes(effectiveSearch);
+    const termMatch = (result.term || '').toLowerCase().includes(effectiveSearch);
+    const statusMatch = (result.status || '').toLowerCase().includes(effectiveSearch);
+    const marks = Number(result.marks) || 0;
+    const letter = getLetter(marks).toLowerCase();
+    const gradeMatch = letter === effectiveSearch;
+    return nameMatch || codeMatch || termMatch || statusMatch || gradeMatch;
+  });
+
+  const filteredGrades = grades.filter((grade) => {
+    if (!effectiveSearch) return true;
+    const nameMatch = (grade.subject || '').toLowerCase().includes(effectiveSearch);
+    const qtrMatch = (grade.quarter || '').toLowerCase().includes(effectiveSearch);
+    const score = Number(grade.score) || 0;
+    const letter = getLetter(score).toLowerCase();
+    const gradeMatch = letter === effectiveSearch;
+    return nameMatch || qtrMatch || gradeMatch;
+  });
+
   const hasSubjectResults = subjectResults.length > 0;
   const hasGrades = grades.length > 0;
 
@@ -31,42 +58,64 @@ const Results = () => {
   const showSubjectResults = activeTab === 'subjectResults' ? (hasSubjectResults || !hasGrades) : false;
 
   const totalScore = showSubjectResults
-    ? subjectResults.reduce((sum, r) => sum + (Number(r.marks) || 0), 0)
-    : grades.reduce((sum, g) => sum + (Number(g.score) || 0), 0);
+    ? filteredSubjectResults.reduce((sum, r) => sum + (Number(r.marks) || 0), 0)
+    : filteredGrades.reduce((sum, g) => sum + (Number(g.score) || 0), 0);
 
-  const count = showSubjectResults ? subjectResults.length : grades.length;
+  const count = showSubjectResults ? filteredSubjectResults.length : filteredGrades.length;
   const average = count > 0 ? totalScore / count : 0;
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Academic Results</h2>
           <p className="text-sm text-gray-500">Your published subject marks and assessment scores.</p>
         </div>
 
-        {hasSubjectResults && hasGrades && (
-          <div className="flex bg-gray-100 p-1 rounded-xl w-fit">
-            <button
-              onClick={() => setActiveTab('subjectResults')}
-              className={cn(
-                "px-4 py-1.5 text-xs font-bold rounded-lg transition-all",
-                activeTab === 'subjectResults' ? "bg-white text-blue-900 shadow-xs" : "text-gray-600 hover:text-gray-900"
-              )}
-            >
-              Subject Results ({subjectResults.length})
-            </button>
-            <button
-              onClick={() => setActiveTab('grades')}
-              className={cn(
-                "px-4 py-1.5 text-xs font-bold rounded-lg transition-all",
-                activeTab === 'grades' ? "bg-white text-blue-900 shadow-xs" : "text-gray-600 hover:text-gray-900"
-              )}
-            >
-              Assessment Grades ({grades.length})
-            </button>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          <div className="relative flex-1 sm:w-64">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search subjects, codes, or grades..."
+              value={localSearch}
+              onChange={(e) => setLocalSearch(e.target.value)}
+              className="w-full pl-9 pr-8 py-2 bg-white border border-gray-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-gray-800 placeholder-gray-400 shadow-sm"
+            />
+            {localSearch && (
+              <button
+                onClick={() => setLocalSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
+                title="Clear search"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
-        )}
+
+          {hasSubjectResults && hasGrades && (
+            <div className="flex bg-gray-100 p-1 rounded-xl shrink-0">
+              <button
+                onClick={() => setActiveTab('subjectResults')}
+                className={cn(
+                  "px-4 py-1.5 text-xs font-bold rounded-lg transition-all",
+                  activeTab === 'subjectResults' ? "bg-white text-blue-900 shadow-xs" : "text-gray-600 hover:text-gray-900"
+                )}
+              >
+                Subject Results ({filteredSubjectResults.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('grades')}
+                className={cn(
+                  "px-4 py-1.5 text-xs font-bold rounded-lg transition-all",
+                  activeTab === 'grades' ? "bg-white text-blue-900 shadow-xs" : "text-gray-600 hover:text-gray-900"
+                )}
+              >
+                Assessment Grades ({filteredGrades.length})
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -105,7 +154,23 @@ const Results = () => {
                     </TableCell>
                   </TableRow>
                 )}
-                {subjectResults.map((result) => {
+                {!isLoading && !isError && subjectResults.length > 0 && filteredSubjectResults.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={6} className="py-12 text-center text-gray-500">
+                      <Search className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                      <p className="font-bold text-gray-800">No subject results match your search</p>
+                      <p className="text-xs text-gray-400 mt-1">No results matching "{localSearch || propSearchQuery || outletCtx?.searchQuery}".</p>
+                      <button
+                        onClick={() => setLocalSearch('')}
+                        className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        Clear search
+                      </button>
+                    </TableCell>
+                  </TableRow>
+                )}
+                {filteredSubjectResults.map((result) => {
                   const marks = Number(result.marks) || 0;
                   const letterGrade = getLetter(marks);
 
@@ -179,7 +244,23 @@ const Results = () => {
                     </TableCell>
                   </TableRow>
                 )}
-                {grades.map((grade) => {
+                {!isLoading && !isError && grades.length > 0 && filteredGrades.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={6} className="py-12 text-center text-gray-500">
+                      <Search className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                      <p className="font-bold text-gray-800">No assessment grades match your search</p>
+                      <p className="text-xs text-gray-400 mt-1">No assessments matching "{localSearch || propSearchQuery || outletCtx?.searchQuery}".</p>
+                      <button
+                        onClick={() => setLocalSearch('')}
+                        className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        Clear search
+                      </button>
+                    </TableCell>
+                  </TableRow>
+                )}
+                {filteredGrades.map((grade) => {
                   const score = Number(grade.score) || 0;
                   const letterGrade = getLetter(score);
 

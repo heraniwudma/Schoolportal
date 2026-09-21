@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Users, UserPlus, ClipboardList, Building2, Loader2 } from 'lucide-react';
+import { Users, UserPlus, ClipboardList, Building2, Loader2, Search, X } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useOutletContext } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 export const TeacherAssignments = () => {
   const queryClient = useQueryClient();
   const { searchQuery: globalSearchQuery } = useOutletContext<{ searchQuery: string }>();
+  const [localSearch, setLocalSearch] = useState('');
 
   // Centralized active academic year from context
   const { academicYears, activeAcademicYearId, isLoading: loadingYears } = useAcademicYear();
@@ -137,7 +138,6 @@ export const TeacherAssignments = () => {
     }
   };
 
-  // --- CHANGED AREA 3: Safely get the teacher's name ---
   const getTeacherDisplayName = (t?: any) => {
     if (!t) return '—';
     if (t.name) return t.name;
@@ -146,7 +146,6 @@ export const TeacherAssignments = () => {
     return '—';
   };
 
-  // --- CHANGED AREA 4: Safely get sections, checking for different casing styles ---
   const selectedGrade = gradeLevels.find((g) => g.id === selectedGradeId);
   const sectionsForGrade = 
     selectedGrade?.ClassSection || 
@@ -177,22 +176,31 @@ export const TeacherAssignments = () => {
   const assignedCount = assignedTeacherIds.size;
   const unassignedCount = Math.max(0, totalTeachers - assignedCount);
 
-  const query = globalSearchQuery?.toLowerCase() || '';
+  const rawSearch = localSearch || globalSearchQuery || '';
+  const query = rawSearch.trim().toLowerCase();
+
   const filteredHomeRoom = homeRoomAssignments.filter((a) => {
+    if (!query) return true;
     const teacherName = getTeacherDisplayName(a.teacher).toLowerCase();
+    const gradeName = (a.grade || '').toLowerCase();
+    const sectionName = (a.section || '').toLowerCase();
     return (
-      (a.grade || '').toLowerCase().includes(query) ||
-      (a.section || '').toLowerCase().includes(query) ||
+      gradeName.includes(query) ||
+      sectionName.includes(query) ||
       teacherName.includes(query)
     );
   });
 
   const filteredSubject = subjectAssignments.filter((a) => {
+    if (!query) return true;
     const teacherName = getTeacherDisplayName(a.teacher).toLowerCase();
+    const gradeName = (a.grade || '').toLowerCase();
+    const sectionName = (a.section || '').toLowerCase();
+    const subjectName = (a.subject?.name || '').toLowerCase();
     return (
-      (a.grade || '').toLowerCase().includes(query) ||
-      (a.section || '').toLowerCase().includes(query) ||
-      (a.subject?.name || '').toLowerCase().includes(query) ||
+      gradeName.includes(query) ||
+      sectionName.includes(query) ||
+      subjectName.includes(query) ||
       teacherName.includes(query)
     );
   });
@@ -252,6 +260,29 @@ export const TeacherAssignments = () => {
         </div>
       </div>
 
+      {/* Search Toolbar */}
+      <div className="bg-white p-4 px-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search assignments by teacher, grade, section, or subject..."
+            value={localSearch}
+            onChange={(e) => setLocalSearch(e.target.value)}
+            className="w-full pl-10 pr-9 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+          />
+          {localSearch && (
+            <button
+              onClick={() => setLocalSearch('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 rounded-full hover:bg-gray-200/50 transition-colors"
+              title="Clear search"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Main Tables */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {/* Section A - Home Room Assignments */}
@@ -289,7 +320,19 @@ export const TeacherAssignments = () => {
                   </tr>
                 ) : filteredHomeRoom.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="text-center py-8 text-gray-400">No home room assignments found</td>
+                    <td colSpan={4} className="text-center py-8 text-gray-400">
+                      <p className="text-sm font-semibold text-gray-700">
+                        {query ? `No homeroom assignments matching "${rawSearch.trim()}"` : 'No home room assignments found'}
+                      </p>
+                      {localSearch && (
+                        <button
+                          onClick={() => setLocalSearch('')}
+                          className="mt-2 px-3 py-1 text-xs text-blue-900 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors font-semibold"
+                        >
+                          Clear search
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ) : (
                   filteredHomeRoom.map((item) => (
@@ -362,7 +405,19 @@ export const TeacherAssignments = () => {
                   </tr>
                 ) : filteredSubject.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="text-center py-8 text-gray-400">No subject assignments found</td>
+                    <td colSpan={4} className="text-center py-8 text-gray-400">
+                      <p className="text-sm font-semibold text-gray-700">
+                        {query ? `No subject assignments matching "${rawSearch.trim()}"` : 'No subject assignments found'}
+                      </p>
+                      {localSearch && (
+                        <button
+                          onClick={() => setLocalSearch('')}
+                          className="mt-2 px-3 py-1 text-xs text-blue-900 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors font-semibold"
+                        >
+                          Clear search
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ) : (
                   filteredSubject.map((item) => (

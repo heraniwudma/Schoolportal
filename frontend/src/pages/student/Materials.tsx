@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { FileText, Download, ShieldAlert, Book, RefreshCw, AlertCircle, Video } from 'lucide-react';
+import { FileText, Download, ShieldAlert, Book, RefreshCw, AlertCircle, Video, Search, X } from 'lucide-react';
+import { useOutletContext } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import { toast } from 'sonner';
 import { api } from '../../lib/api';
@@ -31,10 +32,14 @@ function formatBytes(bytes: number, decimals = 1) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
 
-const Materials = () => {
+const Materials = ({ searchQuery: propSearchQuery = '' }: { searchQuery?: string } = {}) => {
+  const outletCtx = useOutletContext<{ searchQuery?: string } | null>();
   const [mainTab, setMainTab] = useState<'documents' | 'videos'>('documents');
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'notices' | 'materials' | 'rules'>('all');
+  const [localSearch, setLocalSearch] = useState('');
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  const effectiveSearch = (localSearch || propSearchQuery || outletCtx?.searchQuery || '').trim().toLowerCase();
 
   const { data: materials = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['materials'],
@@ -42,9 +47,18 @@ const Materials = () => {
   });
 
   const filteredMaterials = materials.filter((material) => {
-    if (selectedFilter === 'all') return true;
-    const cat = (material.category || '').toLowerCase();
-    return cat.includes(selectedFilter);
+    if (selectedFilter !== 'all') {
+      const cat = (material.category || '').toLowerCase();
+      if (!cat.includes(selectedFilter)) return false;
+    }
+    if (effectiveSearch) {
+      const titleMatch = (material.title || '').toLowerCase().includes(effectiveSearch);
+      const descMatch = (material.description || '').toLowerCase().includes(effectiveSearch);
+      const fileMatch = (material.fileName || '').toLowerCase().includes(effectiveSearch);
+      const catMatch = (material.category || '').toLowerCase().includes(effectiveSearch);
+      return titleMatch || descMatch || fileMatch || catMatch;
+    }
+    return true;
   });
 
   const handleDownload = async (material: BackendMaterial) => {
@@ -104,24 +118,46 @@ const Materials = () => {
       </div>
 
       {mainTab === 'videos' ? (
-        <StudentVideoLessons showHeader={false} />
+        <StudentVideoLessons showHeader={false} searchQuery={effectiveSearch} />
       ) : (
         <div className="space-y-6">
-          <div className="flex flex-wrap gap-2">
-            {(['all', 'materials', 'rules', 'notices'] as const).map((filter) => (
-              <button
-                key={filter}
-                onClick={() => setSelectedFilter(filter)}
-                className={cn(
-                  "px-4 py-2 text-xs font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer",
-                  selectedFilter === filter 
-                    ? "bg-[#1e3a8a] text-white shadow-sm" 
-                    : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
-                )}
-              >
-                {filter === 'all' ? 'All Resources' : filter}
-              </button>
-            ))}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-2">
+              {(['all', 'materials', 'rules', 'notices'] as const).map((filter) => (
+                <button
+                  key={filter}
+                  onClick={() => setSelectedFilter(filter)}
+                  className={cn(
+                    "px-4 py-2 text-xs font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer",
+                    selectedFilter === filter 
+                      ? "bg-[#1e3a8a] text-white shadow-sm" 
+                      : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
+                  )}
+                >
+                  {filter === 'all' ? 'All Resources' : filter}
+                </button>
+              ))}
+            </div>
+
+            <div className="relative flex-1 max-w-sm">
+              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search documents..."
+                value={localSearch}
+                onChange={(e) => setLocalSearch(e.target.value)}
+                className="w-full pl-9 pr-8 py-2 bg-white border border-gray-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-gray-800 placeholder-gray-400 shadow-sm"
+              />
+              {localSearch && (
+                <button
+                  onClick={() => setLocalSearch('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
+                  title="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
 
           {isLoading ? (
@@ -140,15 +176,33 @@ const Materials = () => {
                 Try Again
               </button>
             </div>
-          ) : filteredMaterials.length === 0 ? (
+          ) : materials.length === 0 ? (
             <div className="bg-white rounded-2xl border border-gray-100 p-16 text-center text-gray-500 space-y-2">
               <Book className="w-12 h-12 mx-auto text-gray-300 mb-2" />
               <p className="font-bold text-gray-900">No resources available</p>
               <p className="text-sm text-gray-400">
-                {selectedFilter === 'all' 
-                  ? 'No learning materials or guides have been published for your grade or section yet.' 
+                No learning materials or guides have been published for your grade or section yet.
+              </p>
+            </div>
+          ) : filteredMaterials.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-16 text-center text-gray-500 space-y-2">
+              <Search className="w-12 h-12 mx-auto text-gray-300 mb-2" />
+              <p className="font-bold text-gray-900">No resources match your filters</p>
+              <p className="text-sm text-gray-400">
+                {effectiveSearch
+                  ? `No resources found matching "${localSearch || propSearchQuery || outletCtx?.searchQuery}".`
                   : `No resources found under the category "${selectedFilter}".`}
               </p>
+              <button
+                onClick={() => {
+                  setLocalSearch('');
+                  setSelectedFilter('all');
+                }}
+                className="mt-4 inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+                Reset filters
+              </button>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

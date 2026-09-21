@@ -11,34 +11,39 @@ import {
 const PUBLIC_REGISTRATION_ROLES = ['student', 'teacher', 'parent'] as const;
 
 export class RegisterDto {
-  @IsNotEmpty()
-  @IsString()
-  @MinLength(2)
+  @IsNotEmpty({ message: 'Full name is required' })
+  @IsString({ message: 'Full name must be text' })
+  @MinLength(2, { message: 'Full name must be at least 2 characters' })
   name!: string;
 
-  @IsNotEmpty()
-  @IsString()
-  @MinLength(2)
+  @IsNotEmpty({ message: 'ID Number is required' })
+  @IsString({ message: 'ID Number must be text' })
+  @MinLength(2, { message: 'ID Number must be at least 2 characters' })
   idNumber!: string;
 
   @IsOptional()
-  @Transform(({ value }) => (value === '' ? undefined : value))
-  @IsEmail()
+  @IsString()
+  @MinLength(2, { message: 'Student ID must be at least 2 characters' })
+  studentId?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => (value === '' || value === null ? undefined : value))
+  @IsEmail({}, { message: 'Please enter a valid account email address' })
   email?: string;
 
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'Password is required' })
   @IsString()
-  @MinLength(8)
+  @MinLength(8, { message: 'Password must be at least 8 characters long' })
   password!: string;
 
-  @IsNotEmpty()
+  @IsNotEmpty({ message: 'Confirm Password is required' })
   @IsString()
-  @MinLength(8)
+  @MinLength(8, { message: 'Confirm password must be at least 8 characters long' })
   confirmPassword!: string;
 
   @IsOptional()
   @Transform(({ value }) => (typeof value === 'string' ? value.toLowerCase() : value))
-  @IsIn(PUBLIC_REGISTRATION_ROLES)
+  @IsIn(PUBLIC_REGISTRATION_ROLES, { message: 'Selected role is invalid' })
   role?: (typeof PUBLIC_REGISTRATION_ROLES)[number];
 
   @IsOptional()
@@ -81,7 +86,7 @@ export class RegisterDto {
   @IsOptional() @IsString() economicStatus?: string;
   @IsOptional() @IsString() guardianFullName?: string;
   @IsOptional() @IsString() familyHeadGender?: string;
-  @IsOptional() @Transform(({ value }) => (value === '' ? undefined : value)) @IsEmail() guardianEmail?: string;
+  @IsOptional() @Transform(({ value }) => (value === '' || value === null ? undefined : value)) @IsEmail({}, { message: 'Please enter a valid parent/guardian email address' }) guardianEmail?: string;
   @IsOptional() @IsString() guardianPhone?: string;
   @IsOptional() @IsString() nationalId?: string;
   @IsOptional() @IsString() residenceRegion?: string;

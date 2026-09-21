@@ -8,7 +8,10 @@ import {
   AlertTriangle,
   Clock,
   FileText,
+  Download,
+  RefreshCw,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import { useAcademicYears } from '../../hooks/useAcademicStructure';
 import {
@@ -17,6 +20,8 @@ import {
   useRosterReviewStatus,
   useOfficialPrintRoster,
 } from '../../hooks/useHomeroom';
+import { downloadOfficialPrintRosterPdf } from '../../api/adminReports';
+
 
 const PERIOD_ROWS = [
   { key: 'term1', label: '1st', bg: '' },
@@ -42,7 +47,15 @@ export default function RosterPaperView() {
 
   const currentYear = years.find((y) => y.isCurrent) || years[0];
   const sectionId = querySectionId || homeroomContext?.assignedSection?.id;
-  const yearId = queryYearId || currentYear?.id;
+  // Priority: URL param > section's own academicYearId > current/first year.
+  // The URL param lets the admin roster page pass an explicit year.
+  // For the teacher view we must use the section's year, not the first year
+  // in the list, to prevent academic-year mismatches on the backend.
+  const yearId =
+    queryYearId ||
+    (homeroomContext?.assignedSection?.academicYearId ??
+      homeroomContext?.academicYearId ??
+      currentYear?.id);
 
   const { data: reviewStatusData, isLoading: statusLoading } = useRosterReviewStatus(sectionId, yearId);
   const reviewStatus = reviewStatusData?.status ?? 'DRAFT';
@@ -119,10 +132,37 @@ export default function RosterPaperView() {
     );
   }
 
+  const [isDownloadingPdf, setIsDownloadingPdf] = React.useState(false);
+
   const handlePrint = () => {
     if (!isApproved) return;
     window.print();
   };
+
+  const handleDownloadPdf = async () => {
+    if (!isApproved) {
+      toast.error('Roster must be Approved by Admin before downloading official PDF.');
+      return;
+    }
+    if (!sectionId || !yearId) {
+      toast.error('Missing class section or academic year.');
+      return;
+    }
+    setIsDownloadingPdf(true);
+    try {
+      await downloadOfficialPrintRosterPdf(
+        sectionId,
+        yearId,
+        `Official_Roster_${officialHeader?.sectionName || 'Class'}.pdf`,
+      );
+      toast.success('Official academic roster PDF downloaded successfully.');
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to download official roster PDF');
+    } finally {
+      setIsDownloadingPdf(false);
+    }
+  };
+
 
   return (
     <div className="space-y-6 max-w-[1600px] mx-auto pb-12">
@@ -169,7 +209,26 @@ export default function RosterPaperView() {
             </div>
           )}
 
-          {/* ── Print Button ── */}
+          {/* ── Print & Download Buttons ── */}
+          <button
+            onClick={handleDownloadPdf}
+            disabled={!isApproved || isDownloadingPdf}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm ${
+              isApproved
+                ? 'bg-blue-900 hover:bg-blue-800 text-white cursor-pointer'
+                : 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed opacity-75'
+            }`}
+            title={isApproved ? 'Download Official Academic Roster PDF' : 'PDF download is locked until roster review is Approved'}
+          >
+            {isDownloadingPdf ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : isApproved ? (
+              <Download className="w-4 h-4" />
+            ) : (
+              <Lock className="w-4 h-4" />
+            )}
+            {isApproved ? 'Download PDF' : 'PDF Locked'}
+          </button>
           <button
             onClick={handlePrint}
             disabled={!isApproved}
@@ -183,6 +242,7 @@ export default function RosterPaperView() {
             {isApproved ? <Printer className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
             {isApproved ? 'Print Official Roster' : 'Print Locked'}
           </button>
+
         </div>
       </div>
 

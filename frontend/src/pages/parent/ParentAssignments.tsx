@@ -13,6 +13,7 @@ import {
   AlertCircle, 
   RefreshCw, 
   Search, 
+  X,
   ExternalLink,
   BookOpen,
   User,
@@ -20,7 +21,7 @@ import {
 } from 'lucide-react';
 import { ChildSelector } from '../../components/parent/ChildSelector';
 import StatCard from '../../components/dashboard/StatCard';
-import { Link } from 'react-router-dom';
+import { Link, useOutletContext } from 'react-router-dom';
 import { useTranslation } from '../../i18n/LanguageContext';
 
 function getDueStatus(dueDateStr: string, status: string, t: (key: string, params?: Record<string, string | number>) => string): { label: string; isOverdue: boolean; color: string } {
@@ -55,9 +56,12 @@ const ParentAssignments: React.FC = () => {
   } = useParent();
   const { t } = useTranslation();
 
+  const outletCtx = useOutletContext<{ searchQuery?: string } | null>();
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'SUBMITTED' | 'GRADED' | 'OVERDUE'>('ALL');
   const [subjectFilter, setSubjectFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
+
+  const effectiveSearch = (searchQuery || outletCtx?.searchQuery || '').trim().toLowerCase();
 
   // Query child assignments
   const {
@@ -105,20 +109,19 @@ const ParentAssignments: React.FC = () => {
     }
 
     // Search query
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
+    if (effectiveSearch) {
       list = list.filter(
         (a) =>
-          a.title.toLowerCase().includes(query) ||
-          a.subject?.toLowerCase().includes(query) ||
-          a.description?.toLowerCase().includes(query) ||
-          a.instructions?.toLowerCase().includes(query) ||
-          a.teacherName?.toLowerCase().includes(query),
+          a.title.toLowerCase().includes(effectiveSearch) ||
+          (a.subject || '').toLowerCase().includes(effectiveSearch) ||
+          (a.description || '').toLowerCase().includes(effectiveSearch) ||
+          (a.instructions || '').toLowerCase().includes(effectiveSearch) ||
+          (a.teacherName || '').toLowerCase().includes(effectiveSearch),
       );
     }
 
     return list;
-  }, [rawAssignments, statusFilter, subjectFilter, searchQuery]);
+  }, [rawAssignments, statusFilter, subjectFilter, effectiveSearch]);
 
   if (parentLoading) {
     return (
@@ -322,8 +325,18 @@ const ParentAssignments: React.FC = () => {
               placeholder={t('parent.assignments.searchPlaceholder')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-9 pr-4 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-900/20 focus:bg-white transition-all"
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-9 pr-8 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-900/20 focus:bg-white transition-all text-gray-800 placeholder-gray-400"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
+                title="Clear search"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </div>
       </div>

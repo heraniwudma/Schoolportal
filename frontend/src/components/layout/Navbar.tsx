@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useTranslation } from '../../i18n/LanguageContext';
-import { Search, Menu, UserCircle } from 'lucide-react';
+import { Search, Menu, UserCircle, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import ChildSelector from '../parent/ChildSelector';
 import LanguageSelector from '../common/LanguageSelector';
@@ -28,8 +28,18 @@ const Navbar = ({ onMenuClick, onSidebarOpen, onSidebarClose, searchQuery, setSe
             placeholder={t('common.nav.searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg w-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+            className="pl-10 pr-9 py-2 bg-gray-50 border border-gray-200 rounded-lg w-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
           />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 rounded-md transition-colors"
+              title="Clear search"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
 

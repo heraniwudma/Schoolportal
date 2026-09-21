@@ -7,6 +7,8 @@ import { RolesGuard } from './guards/roles.guard';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { TeacherAssignmentsService } from '../teacher-assignments/teacher-assignments.service'; // Adjust path to point to your service file
 
+import { AuthRateLimiterService } from './auth-rate-limiter.service';
+
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
@@ -16,7 +18,7 @@ import { TeacherAssignmentsService } from '../teacher-assignments/teacher-assign
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, RolesGuard, TeacherAssignmentsService],
-  exports: [AuthService, JwtModule, PassportModule, RolesGuard],
+  providers: [AuthService, AuthRateLimiterService, JwtStrategy, RolesGuard, TeacherAssignmentsService],
+  exports: [AuthService, AuthRateLimiterService, JwtModule, PassportModule, RolesGuard],
 })
 export class AuthModule {}

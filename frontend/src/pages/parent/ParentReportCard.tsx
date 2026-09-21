@@ -4,7 +4,7 @@ import { useParent } from '../../context/ParentContext';
 import { getChildReportCard } from '../../api/parents';
 import { 
   Award, 
-  Printer, 
+  ShieldCheck, 
   GraduationCap, 
   Calendar, 
   Users, 
@@ -35,6 +35,20 @@ const ParentReportCard: React.FC = () => {
     setSelectedTermId('');
   }, [selectedChildId]);
 
+  // Intercept keyboard print (Ctrl+P / Cmd+P) and save (Ctrl+S / Cmd+S)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 'P' || e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, true);
+    };
+  }, []);
+
   // Query child report card
   const {
     data: reportCardResponse,
@@ -54,10 +68,6 @@ const ParentReportCard: React.FC = () => {
       setSelectedTermId(reportCardResponse.selectedTermId);
     }
   }, [reportCardResponse?.selectedTermId, selectedTermId]);
-
-  const handlePrint = () => {
-    window.print();
-  };
 
   if (parentLoading) {
     return (
@@ -126,6 +136,16 @@ const ParentReportCard: React.FC = () => {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-12">
+      {/* Print restriction banner rendered only in print media */}
+      <div className="report-card-print-restriction-notice">
+        <h3 className="text-base font-bold text-red-800 uppercase tracking-wider">
+          {t('parent.reportCard.printRestrictedTitle')}
+        </h3>
+        <p className="text-xs text-red-700 mt-1">
+          {t('parent.reportCard.printRestrictedMessage')}
+        </p>
+      </div>
+
       {/* Top Action Bar (hidden on print) */}
       <div className="no-print bg-white rounded-3xl p-6 shadow-sm border border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -141,15 +161,10 @@ const ParentReportCard: React.FC = () => {
             </div>
           )}
 
-          <button
-            type="button"
-            onClick={handlePrint}
-            disabled={!currentReportCard || reportCardLoading}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-900 text-white rounded-xl text-xs font-bold hover:bg-blue-800 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Printer className="w-4 h-4" />
-            {t('parent.reportCard.printReportCard')}
-          </button>
+          <span className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-50 border border-blue-200 text-blue-900 rounded-xl text-xs font-bold select-none shadow-xs">
+            <ShieldCheck className="w-4 h-4 text-blue-700" />
+            {t('parent.reportCard.viewOnlyBadge')}
+          </span>
         </div>
       </div>
 
@@ -222,11 +237,16 @@ const ParentReportCard: React.FC = () => {
         </div>
       )}
 
-      {/* Official Report Card Printable Document */}
+      {/* Official Report Card Secure Document */}
       {!reportCardLoading && !reportCardError && currentReportCard && (
-        <div id="printable-report-card" className="bg-white rounded-3xl shadow-xl border border-gray-200 overflow-hidden print:border-none print:shadow-none print:m-0 print:p-0">
+        <div 
+          className="report-card-secure-view select-none bg-white rounded-3xl shadow-xl border border-gray-200 overflow-hidden"
+          onContextMenu={(e) => e.preventDefault()}
+          onCopy={(e) => e.preventDefault()}
+          onDragStart={(e) => e.preventDefault()}
+        >
           {/* Header Banner */}
-          <div className="p-8 bg-[#1e3a8a] text-white flex flex-col md:flex-row justify-between gap-6 print:bg-[#1e3a8a] print:text-white">
+          <div className="p-8 bg-[#1e3a8a] text-white flex flex-col md:flex-row justify-between gap-6">
             <div className="flex items-center gap-5">
               <div className="w-20 h-20 bg-white/10 rounded-2xl flex items-center justify-center backdrop-blur-sm flex-shrink-0">
                 <GraduationCap className="w-10 h-10 text-white" />

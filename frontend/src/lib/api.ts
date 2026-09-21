@@ -38,11 +38,20 @@ export class ApiError extends Error {
 
 async function parseError(res: Response): Promise<string> {
   try {
-    const body = (await res.json()) as { message?: string | string[] };
-    if (Array.isArray(body.message)) return body.message.join(', ');
-    return body.message ?? `HTTP ${res.status}`;
+    const body = (await res.json()) as { message?: string | string[]; error?: string };
+    if (Array.isArray(body.message)) {
+      if (body.message.length === 1) return body.message[0];
+      return `Validation failed:\n• ${body.message.join('\n• ')}`;
+    }
+    if (typeof body.message === 'string' && body.message.trim()) {
+      return body.message;
+    }
+    if (typeof body.error === 'string' && body.error.trim()) {
+      return body.error;
+    }
+    return `Request failed with status ${res.status}`;
   } catch {
-    return `HTTP ${res.status}`;
+    return `Request failed with status ${res.status}`;
   }
 }
 
@@ -65,7 +74,6 @@ async function request<T>(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const startTime = performance.now();
   let res: Response;
   try {
     res = await fetch(`${BASE_URL}${path}`, {
@@ -74,22 +82,8 @@ async function request<T>(
       body: body !== undefined ? (isFormData ? body : JSON.stringify(body)) : undefined,
     });
   } catch (netErr: any) {
-    const elapsed = Math.round(performance.now() - startTime);
-    console.error(`[API Network Error] ${method} ${path} failed after ${elapsed}ms:`, netErr);
+    console.error(`[API] ${method} ${path} network error:`, netErr.message ?? netErr);
     throw netErr;
-  }
-
-  const elapsed = Math.round(performance.now() - startTime);
-  const serverTime = res.headers.get('x-response-time') || 'n/a';
-
-  if (elapsed >= 500) {
-    console.warn(
-      `[SLOW API] ${method} ${path} took ${elapsed}ms (server: ${serverTime}, status: ${res.status})`,
-    );
-  } else if (import.meta.env.DEV) {
-    console.debug(
-      `[API] ${method} ${path} - ${elapsed}ms (server: ${serverTime}, status: ${res.status})`,
-    );
   }
 
   if (!res.ok) {

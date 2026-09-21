@@ -40,6 +40,9 @@ export class SubmitRosterDto {
   @IsOptional()
   @IsIn(['roster', 'report-cards', 'both'])
   type?: 'roster' | 'report-cards' | 'both';
+
+  @IsOptional()
+  conductData?: Record<string, string>;
 }
 
 export class RejectRosterDto {
