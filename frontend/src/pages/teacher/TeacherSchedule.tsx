@@ -1,5 +1,4 @@
 import React, { useState, useMemo } from 'react';
-import { useOutletContext } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   Calendar,
@@ -51,9 +50,8 @@ interface TeacherScheduleProps {
 }
 
 export const TeacherSchedule: React.FC<TeacherScheduleProps> = ({ searchQuery: propSearchQuery = '' }) => {
-  const outletCtx = useOutletContext<{ searchQuery?: string } | null>();
   const [localSearch, setLocalSearch] = useState('');
-  const effectiveSearch = (localSearch || propSearchQuery || outletCtx?.searchQuery || '').trim().toLowerCase();
+  const effectiveSearch = (localSearch || propSearchQuery || '').trim().toLowerCase();
 
   // 1. View Mode: 'personal' (My Weekly Schedule) vs 'class' (Class Timetables)
   const [viewMode, setViewMode] = useState<'personal' | 'class'>('personal');
@@ -281,7 +279,7 @@ export const TeacherSchedule: React.FC<TeacherScheduleProps> = ({ searchQuery: p
               type="text"
               aria-label="Search schedule"
               placeholder="Search subject, class, room..."
-              value={localSearch || propSearchQuery || outletCtx?.searchQuery || ''}
+              value={localSearch || propSearchQuery || ''}
               onChange={(e) => setLocalSearch(e.target.value)}
               className="w-full pl-9 pr-8 py-1.5 text-xs bg-white border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-900 shadow-xs font-medium"
             />

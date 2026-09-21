@@ -1,5 +1,4 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { useOutletContext } from 'react-router-dom';
 import { Search, X } from 'lucide-react';
 import { getAcademicYears } from '../../api/academicStructure';
 import { api } from '../../lib/api';
@@ -24,9 +23,8 @@ type RosterRow = {
 type ConsolidatedRoster = { section: { name: string; grade?: string; homeroomTeacher: string | null }; subjects: Array<{ id: string; name: string; code: string }>; students: RosterRow[] };
 
 export default function HomeroomRoster() {
-  const outletCtx = useOutletContext<{ searchQuery?: string } | null>();
   const [localSearch, setLocalSearch] = useState('');
-  const effectiveSearch = (localSearch || outletCtx?.searchQuery || '').trim().toLowerCase();
+  const effectiveSearch = localSearch.trim().toLowerCase();
 
   const [data, setData] = useState<ConsolidatedRoster | null>(null);
   const [loading, setLoading] = useState(true);
@@ -77,7 +75,7 @@ export default function HomeroomRoster() {
             type="text"
             aria-label="Search students"
             placeholder="Search student, ID..."
-            value={localSearch || outletCtx?.searchQuery || ''}
+            value={localSearch}
             onChange={(e) => setLocalSearch(e.target.value)}
             className="w-full pl-9 pr-8 py-1.5 text-xs bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-900 shadow-xs"
           />
