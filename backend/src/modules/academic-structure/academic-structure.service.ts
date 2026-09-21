@@ -5,12 +5,23 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 export class AcademicStructureService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private cachedYears: any[] | null = null;
+  private cachedYearsExpiresAt = 0;
+  private readonly YEARS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
   // ─── ACADEMIC YEARS ──────────────────────────────────────────────────────────
 
   async getAcademicYears() {
-    return this.prisma.academicYear.findMany({
+    const now = Date.now();
+    if (this.cachedYears && this.cachedYearsExpiresAt > now) {
+      return this.cachedYears;
+    }
+    const years = await this.prisma.academicYear.findMany({
       orderBy: { startDate: 'desc' },
     });
+    this.cachedYears = years;
+    this.cachedYearsExpiresAt = now + this.YEARS_CACHE_TTL_MS;
+    return years;
   }
 
   async createAcademicYear(data: { label: string; startDate: Date; endDate: Date }) {
@@ -25,7 +36,7 @@ export class AcademicStructureService {
       throw new BadRequestException('Academic year label already exists');
     }
 
-    return this.prisma.academicYear.create({
+    const created = await this.prisma.academicYear.create({
       data: {
         id: crypto.randomUUID(),
         year: data.label,
@@ -35,6 +46,8 @@ export class AcademicStructureService {
         updatedAt: new Date(),
       },
     });
+    this.cachedYears = null; // Invalidate cache
+    return created;
   }
 
   async activateAcademicYear(id: string) {
@@ -45,7 +58,7 @@ export class AcademicStructureService {
     }
 
     // Run transaction to ensure only one is active
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // Deactivate all
       await tx.academicYear.updateMany({
         where: { isCurrent: true },
@@ -57,6 +70,8 @@ export class AcademicStructureService {
         data: { isCurrent: true },
       });
     });
+    this.cachedYears = null; // Invalidate cache
+    return result;
   }
 
   async getGradeLevels(academicYearId?: string) {

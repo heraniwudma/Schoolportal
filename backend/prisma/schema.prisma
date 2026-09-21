@@ -456,8 +456,12 @@ model Examination {
   delayMinutes      Int                 @default(0)
   resultsReleased   Boolean             @default(false)
   resultsReleasedAt DateTime?
+  rejectionReason   String?
+  isResubmitted     Boolean             @default(false)
+  resubmittedAt     DateTime?
   ExamAttempt       ExamAttempt[]
   sessions          ExamSession[]
+  reviewHistory     ExamReviewHistory[]
   Class             Class               @relation(fields: [classId], references: [id])
   ClassSection      ClassSection        @relation(fields: [classSectionId], references: [id], onDelete: Cascade)
   Subject           Subject             @relation(fields: [subjectId], references: [id])
@@ -472,10 +476,26 @@ model Examination {
   @@index([classSectionId, status])
 }
 
+model ExamReviewHistory {
+  id           String      @id @default(uuid())
+  examId       String
+  status       ExamStatus
+  action       String
+  reason       String?
+  actionById   String?
+  actionByName String?
+  createdAt    DateTime    @default(now())
+  examination  Examination @relation(fields: [examId], references: [id], onDelete: Cascade)
+
+  @@index([examId])
+  @@map("exam_review_history")
+}
+
 model Question {
   id          String              @id @default(uuid())
   examId      String
   text        String
+  marks       Float               @default(10)
   options     Option[]
   examination Examination         @relation(fields: [examId], references: [id], onDelete: Cascade)
   results     StudentExamResult[]
@@ -572,6 +592,7 @@ model Assignment {
   classId           String?
   teacherId         String
   description       String?
+  maxMark           Float?              @default(20)
   updatedAt         DateTime            @default(now()) @updatedAt
   Class             Class?              @relation(fields: [classId], references: [id])
   ClassSection      ClassSection?       @relation(fields: [classSectionId], references: [id])
@@ -596,6 +617,7 @@ model Submission {
   fileName     String?
   fileType     String?
   fileSize     Int?
+  feedback     String?
   grades       Grade[]
   assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
   student      Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)

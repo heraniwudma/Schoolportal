@@ -15,6 +15,7 @@ import {
   Eye,
   ShieldCheck,
   ShieldAlert,
+  Search,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { toast } from 'sonner';
@@ -139,11 +140,11 @@ export default function TeacherExamResultsModal({ examId, onClose, onExamUpdated
     const isDone = s.sessionStatus === 'COMPLETED' || s.sessionStatus === 'TIMED_OUT';
     if (filter === 'SUBMITTED' && !isDone) return false;
     if (filter === 'PENDING' && isDone) return false;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
       return (
-        s.studentName.toLowerCase().includes(q) ||
-        s.admissionNo.toLowerCase().includes(q)
+        (s.studentName || '').toLowerCase().includes(q) ||
+        (s.admissionNo || '').toLowerCase().includes(q)
       );
     }
     return true;
@@ -312,13 +313,24 @@ export default function TeacherExamResultsModal({ examId, onClose, onExamUpdated
 
                   <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                     {/* Search */}
-                    <input
-                      type="text"
-                      placeholder="Search name or admission no..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="px-3.5 py-1.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 w-full sm:w-56"
-                    />
+                    <div className="relative w-full sm:w-60">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Search student or adm no..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-8 pr-8 py-1.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 w-full"
+                      />
+                      {searchQuery && (
+                        <button
+                          onClick={() => setSearchQuery('')}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
 
                     {/* Filter Pills */}
                     <div className="flex items-center bg-gray-100 p-1 rounded-xl text-xs font-bold">
@@ -366,8 +378,27 @@ export default function TeacherExamResultsModal({ examId, onClose, onExamUpdated
                     <tbody className="divide-y divide-gray-100">
                       {filteredStudents.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="px-5 py-10 text-center text-sm text-gray-400">
-                            No students match the selected filter.
+                          <td colSpan={6} className="px-5 py-12 text-center">
+                            <div className="flex flex-col items-center justify-center max-w-sm mx-auto text-center">
+                              <Search className="w-10 h-10 text-gray-300 mb-3" />
+                              <h4 className="text-sm font-semibold text-gray-900 mb-1">
+                                {searchQuery ? 'No matching students found' : 'No submissions found'}
+                              </h4>
+                              <p className="text-xs text-gray-500 mb-4">
+                                {searchQuery
+                                  ? `No students match "${searchQuery}". Check the spelling or clear your search.`
+                                  : 'No student submissions found for the selected filter.'}
+                              </p>
+                              {searchQuery && (
+                                <button
+                                  onClick={() => setSearchQuery('')}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                  Clear Search
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ) : (

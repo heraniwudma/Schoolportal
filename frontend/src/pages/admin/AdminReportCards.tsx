@@ -1,11 +1,19 @@
 import React, { useState } from 'react';
-import { Search, RefreshCw, FileCheck, CheckCircle, Clock, Eye, AlertCircle, Award, UserCheck } from 'lucide-react';
+import { Search, RefreshCw, FileCheck, CheckCircle, Clock, Eye, AlertCircle, Award, UserCheck, X, Download } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useOutletContext } from 'react-router-dom';
 import { useAcademicYear } from '../../context/AcademicYearContext';
 import { getTermsForReportCards } from '../../api/reportCards';
-import { getAdminSections, getAdminSectionReportCards, AdminSectionSummary, AdminReportCardStudent } from '../../api/adminReports';
+import {
+  getAdminSections,
+  getAdminSectionReportCards,
+  downloadAdminSectionsSummaryPdf,
+  downloadAdminSectionReportCardsPdf,
+  AdminSectionSummary,
+  AdminReportCardStudent,
+} from '../../api/adminReports';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 
 const AdminReportCards = () => {
   const { searchQuery: globalSearchQuery } = useOutletContext<{ searchQuery: string }>();
@@ -19,6 +27,11 @@ const AdminReportCards = () => {
   
   const [selectedSection, setSelectedSection] = useState<AdminSectionSummary | null>(null);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [modalStudentSearch, setModalStudentSearch] = useState('');
+
+  const [isDownloadingSummary, setIsDownloadingSummary] = useState(false);
+  const [isDownloadingSectionCards, setIsDownloadingSectionCards] = useState(false);
+
 
   const queryClient = useQueryClient();
   
@@ -47,19 +60,29 @@ const AdminReportCards = () => {
     enabled: isReviewModalOpen && !!selectedSection?.id && !!academicYearId,
   });
 
-  const effectiveSearch = localSearch || globalSearchQuery || '';
+  const rawSearch = localSearch || globalSearchQuery || '';
+  const effectiveSearch = rawSearch.trim().toLowerCase();
   
   const filteredSections = sections.filter((sec) => {
-    const teacherName = sec.homeroomTeacher || '';
+    const teacherName = (sec.homeroomTeacher || '').toLowerCase();
+    const sectionName = (sec.displayName || '').toLowerCase();
+    const gradeName = (sec.gradeLevelName || '').toLowerCase();
+    const statusText = (sec.status || '').toLowerCase();
+
     const matchesSearch =
-      sec.displayName.toLowerCase().includes(effectiveSearch.toLowerCase()) || 
-      teacherName.toLowerCase().includes(effectiveSearch.toLowerCase());
+      !effectiveSearch ||
+      sectionName.includes(effectiveSearch) ||
+      teacherName.includes(effectiveSearch) ||
+      gradeName.includes(effectiveSearch) ||
+      statusText.includes(effectiveSearch);
+
     const matchesStatus = statusFilter === 'All' || sec.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
   const handleReviewClick = (section: AdminSectionSummary) => {
     setSelectedSection(section);
+    setModalStudentSearch('');
     setIsReviewModalOpen(true);
   };
 
@@ -76,6 +99,44 @@ const AdminReportCards = () => {
 
   const topStudent = reportCards.find(r => r.overallRank === 1);
 
+  const handleDownloadSummaryPdf = async () => {
+    if (filteredSections.length === 0) {
+      toast.warning('No section report data matches the current filters to download.');
+      return;
+    }
+    setIsDownloadingSummary(true);
+    try {
+      await downloadAdminSectionsSummaryPdf(academicYearId, statusFilter, localSearch || globalSearchQuery);
+      toast.success('Section report summary PDF downloaded successfully.');
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to download report summary PDF');
+    } finally {
+      setIsDownloadingSummary(false);
+    }
+  };
+
+  const handleDownloadSectionCardsPdf = async () => {
+    if (!selectedSection) return;
+    if (reportCards.length === 0) {
+      toast.warning('No student report cards available to download for this section.');
+      return;
+    }
+    setIsDownloadingSectionCards(true);
+    try {
+      await downloadAdminSectionReportCardsPdf(
+        selectedSection.id,
+        academicYearId,
+        modalStudentSearch,
+        `Student_Report_${selectedSection.displayName || selectedSection.name}.pdf`,
+      );
+      toast.success('Compiled report cards PDF downloaded successfully.');
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to download report cards PDF');
+    } finally {
+      setIsDownloadingSectionCards(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -84,6 +145,19 @@ const AdminReportCards = () => {
           <p className="text-sm text-gray-500">Review and inspect term and yearly report cards submitted by Home Room Teachers.</p>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={handleDownloadSummaryPdf}
+            disabled={isDownloadingSummary || isLoadingSections}
+            className="flex items-center gap-2 px-4 py-2.5 bg-blue-900 text-white rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-blue-800 transition-all shadow-sm disabled:opacity-50"
+            title="Download Summary Report PDF"
+          >
+            {isDownloadingSummary ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4" />
+            )}
+            Download PDF
+          </button>
           <button
             onClick={handleRefresh}
             disabled={isLoadingSections || isRefetchingSections}
@@ -136,8 +210,17 @@ const AdminReportCards = () => {
               placeholder="Search section or teacher..."
               value={localSearch}
               onChange={(e) => setLocalSearch(e.target.value)}
-              className="w-full h-12 pl-11 pr-4 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-900/20 focus:bg-white transition-all"
+              className="w-full h-12 pl-11 pr-10 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-900/20 focus:bg-white transition-all font-medium"
             />
+            {localSearch && (
+              <button
+                onClick={() => setLocalSearch('')}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-200/50 transition-colors"
+                title="Clear search"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
         <div>
@@ -226,10 +309,28 @@ const AdminReportCards = () => {
                   <td colSpan={6} className="px-6 py-12 text-center">
                     <div className="flex flex-col items-center justify-center text-gray-400">
                       <FileCheck className="w-12 h-12 mb-3 opacity-20" />
-                      <p className="text-sm font-bold text-gray-900">No report submissions found</p>
-                      <p className="text-xs mt-1">
-                        {academicYearId ? 'No class sections match the selected filter.' : 'Please select an academic year to view report submissions.'}
+                      <p className="text-sm font-bold text-gray-900">
+                        {effectiveSearch ? 'No matching report submissions' : 'No report submissions found'}
                       </p>
+                      <p className="text-xs mt-1 text-gray-500">
+                        {effectiveSearch ? (
+                          <>
+                            No class sections match &ldquo;<span className="font-semibold text-gray-700">{rawSearch.trim()}</span>&rdquo;.
+                          </>
+                        ) : academicYearId ? (
+                          'No class sections match the selected filter.'
+                        ) : (
+                          'Please select an academic year to view report submissions.'
+                        )}
+                      </p>
+                      {localSearch && (
+                        <button
+                          onClick={() => setLocalSearch('')}
+                          className="mt-3 px-3.5 py-1.5 text-xs font-semibold text-blue-900 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors"
+                        >
+                          Clear search
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -252,14 +353,29 @@ const AdminReportCards = () => {
                   Homeroom Teacher: {selectedSection.homeroomTeacher || 'Unassigned'} • {selectedSection.enrolledCount} Enrolled Students
                 </p>
               </div>
-              <span className={cn(
-                "px-4 py-2 rounded-full text-xs font-black uppercase tracking-widest",
-                selectedSection.status === 'Submitted' ? "bg-green-100 text-green-700" : 
-                selectedSection.status === 'Pending Review' ? "bg-amber-100 text-amber-700" :
-                "bg-gray-100 text-gray-500"
-              )}>
-                {selectedSection.status}
-              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleDownloadSectionCardsPdf}
+                  disabled={isDownloadingSectionCards || isLoadingReportCards || reportCards.length === 0}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-900 text-white rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-blue-800 transition-all shadow-sm disabled:opacity-50"
+                  title="Download Section Report Cards PDF"
+                >
+                  {isDownloadingSectionCards ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Download className="w-3.5 h-3.5" />
+                  )}
+                  Download PDF
+                </button>
+                <span className={cn(
+                  "px-4 py-2 rounded-full text-xs font-black uppercase tracking-widest",
+                  selectedSection.status === 'Submitted' ? "bg-green-100 text-green-700" : 
+                  selectedSection.status === 'Pending Review' ? "bg-amber-100 text-amber-700" :
+                  "bg-gray-100 text-gray-500"
+                )}>
+                  {selectedSection.status}
+                </span>
+              </div>
             </div>
 
             {/* Quick KPI stats row */}
@@ -298,6 +414,44 @@ const AdminReportCards = () => {
                 </div>
               </div>
             )}
+
+            {/* Modal Student Search Toolbar */}
+            {reportCards.length > 0 && (() => {
+              const filteredModalCount = reportCards.filter((student: AdminReportCardStudent) => {
+                if (!modalStudentSearch.trim()) return true;
+                const q = modalStudentSearch.trim().toLowerCase();
+                const fullName = `${student.firstName || ''} ${student.lastName || ''}`.toLowerCase();
+                const adm = (student.admissionNo || '').toLowerCase();
+                return fullName.includes(q) || adm.includes(q);
+              }).length;
+
+              return (
+                <div className="px-6 py-3 bg-white border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="text-xs font-semibold text-gray-500">
+                    Showing <span className="font-bold text-gray-900">{filteredModalCount}</span> of {reportCards.length} students
+                  </div>
+                  <div className="relative w-full sm:w-72">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search student by name or ID..."
+                      value={modalStudentSearch}
+                      onChange={(e) => setModalStudentSearch(e.target.value)}
+                      className="w-full h-9 pl-9 pr-8 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-900/20 focus:bg-white transition-all font-medium"
+                    />
+                    {modalStudentSearch && (
+                      <button
+                        onClick={() => setModalStudentSearch('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
+                        title="Clear student search"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
             
             <div className="p-6 overflow-y-auto flex-1">
               {isLoadingReportCards ? (
@@ -313,7 +467,36 @@ const AdminReportCards = () => {
                     No active students with compiled results found for {selectedSection.displayName}.
                   </p>
                 </div>
-              ) : (
+              ) : (() => {
+                const filteredModalStudents = reportCards.filter((student: AdminReportCardStudent) => {
+                  if (!modalStudentSearch.trim()) return true;
+                  const q = modalStudentSearch.trim().toLowerCase();
+                  const fullName = `${student.firstName || ''} ${student.lastName || ''}`.toLowerCase();
+                  const adm = (student.admissionNo || '').toLowerCase();
+                  return fullName.includes(q) || adm.includes(q);
+                });
+
+                if (filteredModalStudents.length === 0) {
+                  return (
+                    <div className="border border-gray-200 rounded-2xl p-12 text-center text-gray-500">
+                      <Search className="w-10 h-10 mx-auto text-gray-300 mb-2" />
+                      <p className="font-bold text-gray-900 text-sm">
+                        No students found matching &ldquo;{modalStudentSearch.trim()}&rdquo;
+                      </p>
+                      <p className="text-xs mt-1 text-gray-500">
+                        Check the student name or admission number spelling.
+                      </p>
+                      <button
+                        onClick={() => setModalStudentSearch('')}
+                        className="mt-3 px-3.5 py-1.5 text-xs font-semibold text-blue-900 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors"
+                      >
+                        Clear search
+                      </button>
+                    </div>
+                  );
+                }
+
+                return (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
@@ -329,7 +512,7 @@ const AdminReportCards = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {reportCards.map((student: AdminReportCardStudent) => (
+                      {filteredModalStudents.map((student: AdminReportCardStudent) => (
                         <tr key={student.studentId} className="hover:bg-gray-50/50 transition-colors">
                           <td className="px-4 py-3 text-sm font-black text-gray-900">
                             {student.overallRank === 1 ? (
@@ -378,7 +561,8 @@ const AdminReportCards = () => {
                     </tbody>
                   </table>
                 </div>
-              )}
+                );
+              })()}
             </div>
             
             <div className="p-6 border-t border-gray-100 flex justify-between items-center bg-gray-50">

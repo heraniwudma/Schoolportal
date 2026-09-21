@@ -1,4 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { useOutletContext } from 'react-router-dom';
+import { Search, X } from 'lucide-react';
 import { getAcademicYears } from '../../api/academicStructure';
 import { api } from '../../lib/api';
 
@@ -22,6 +24,10 @@ type RosterRow = {
 type ConsolidatedRoster = { section: { name: string; grade?: string; homeroomTeacher: string | null }; subjects: Array<{ id: string; name: string; code: string }>; students: RosterRow[] };
 
 export default function HomeroomRoster() {
+  const outletCtx = useOutletContext<{ searchQuery?: string } | null>();
+  const [localSearch, setLocalSearch] = useState('');
+  const effectiveSearch = (localSearch || outletCtx?.searchQuery || '').trim().toLowerCase();
+
   const [data, setData] = useState<ConsolidatedRoster | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -43,14 +49,49 @@ export default function HomeroomRoster() {
     load();
   }, []);
 
+  const filteredStudents = useMemo(() => {
+    if (!data?.students) return [];
+    if (!effectiveSearch) return data.students;
+    return data.students.filter((s) => {
+      return (
+        (s.studentName || '').toLowerCase().includes(effectiveSearch) ||
+        (s.admissionNo || '').toLowerCase().includes(effectiveSearch) ||
+        (s.conduct || '').toLowerCase().includes(effectiveSearch)
+      );
+    });
+  }, [data?.students, effectiveSearch]);
+
   if (loading) return <p className="text-gray-500">Preparing consolidated roster...</p>;
   if (error) return <p className="text-red-600">{error}</p>;
   if (!data) return null;
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Consolidated Roster</h1>
-        <p className="text-sm text-gray-500">{data.section.grade ? `${data.section.grade} - ` : ''}{data.section.name} | Submitted subject results</p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">Consolidated Roster</h1>
+          <p className="text-sm text-gray-500">{data.section.grade ? `${data.section.grade} - ` : ''}{data.section.name} | Submitted subject results</p>
+        </div>
+        <div className="relative min-w-[200px] sm:w-64">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+          <input
+            type="text"
+            aria-label="Search students"
+            placeholder="Search student, ID..."
+            value={localSearch || outletCtx?.searchQuery || ''}
+            onChange={(e) => setLocalSearch(e.target.value)}
+            className="w-full pl-9 pr-8 py-1.5 text-xs bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-900 shadow-xs"
+          />
+          {effectiveSearch && (
+            <button
+              type="button"
+              onClick={() => setLocalSearch('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
+              title="Clear search"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
       </div>
       <div className="bg-white border rounded-xl overflow-auto">
         <table className="min-w-[1500px] w-full text-xs">
@@ -93,7 +134,23 @@ export default function HomeroomRoster() {
             </tr>
           </thead>
           <tbody className="divide-y">
-            {data.students.map((student, index) => (
+            {filteredStudents.length === 0 && data.students.length > 0 ? (
+              <tr>
+                <td colSpan={data.subjects.length * 7 + 8} className="p-8 text-center text-gray-500">
+                  <div className="space-y-2">
+                    <p className="font-bold text-gray-700">No students match &ldquo;{effectiveSearch}&rdquo;</p>
+                    <button
+                      type="button"
+                      onClick={() => setLocalSearch('')}
+                      className="px-3 py-1 bg-blue-50 text-blue-900 rounded-lg text-xs font-semibold hover:bg-blue-100"
+                    >
+                      Clear search
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ) : (
+              filteredStudents.map((student, index) => (
               <tr key={student.studentId}>
                 <td className="p-3">{index + 1}</td>
                 <td className="p-3 font-semibold whitespace-nowrap">{student.admissionNo} {student.studentName}</td>
@@ -129,7 +186,8 @@ export default function HomeroomRoster() {
                 <td className="p-3 text-center">{student.absentDays}</td>
                 <td className="p-3 text-center">{student.conduct || '-'}</td>
               </tr>
-            ))}
+            ))
+            )}
           </tbody>
         </table>
       </div>

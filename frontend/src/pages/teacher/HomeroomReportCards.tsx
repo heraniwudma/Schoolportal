@@ -10,7 +10,7 @@
 import React, { useState, useCallback, useRef } from 'react';
 import {
   RefreshCw, Printer, Download, CheckCircle2, AlertCircle,
-  Clock, ChevronDown, ChevronUp, FileText, Search, Save, Send,
+  Clock, ChevronDown, ChevronUp, FileText, Search, Save, Send, X,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { toast } from 'sonner';
@@ -23,6 +23,8 @@ import {
   ReportCardData,
 } from '../../hooks/useHomeroom';
 import { saveHomeroomConduct, submitReportCardsToAdmin } from '../../api/adminReports';
+import { downloadCompiledReportCardsPdf } from '../../api/reportCards';
+
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -354,6 +356,35 @@ export default function HomeroomReportCards() {
     .filter((s) => selectedStudents.includes(s.studentId))
     .map(buildFinalCard);
 
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+
+  const handleDownloadPdf = async () => {
+    if (!sectionId || !yearId) {
+      toast.error('No homeroom section or academic year selected.');
+      return;
+    }
+    if (compiledStudents.length === 0) {
+      toast.warning('No report card data available to download.');
+      return;
+    }
+    setIsDownloadingPdf(true);
+    try {
+      const targetIds = selectedStudents.length > 0 ? selectedStudents : undefined;
+      await downloadCompiledReportCardsPdf(
+        sectionId,
+        yearId,
+        searchQuery,
+        targetIds,
+        `Student_Report_${homeroomContext?.assignedSection?.name || 'Class'}.pdf`,
+      );
+      toast.success('Report cards PDF downloaded successfully.');
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to download report cards PDF');
+    } finally {
+      setIsDownloadingPdf(false);
+    }
+  };
+
   // ─────────────────────────────────────────────────────────────────────────
   // MAIN RENDER
   // ─────────────────────────────────────────────────────────────────────────
@@ -412,6 +443,19 @@ export default function HomeroomReportCards() {
             <button onClick={handleExportCsv}
               className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-200">
               <Download className="w-4 h-4" /> Export CSV
+            </button>
+            <button
+              onClick={handleDownloadPdf}
+              disabled={isDownloadingPdf || cardsLoading || compiledStudents.length === 0}
+              className="flex items-center gap-2 px-3 py-2 bg-blue-50 text-blue-900 border border-blue-200 rounded-lg text-sm font-semibold hover:bg-blue-100 disabled:opacity-50 transition-colors shadow-sm"
+              title="Download Report Cards as PDF"
+            >
+              {isDownloadingPdf ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4" />
+              )}
+              Download PDF
             </button>
             {!isReportCardApproved && (
               <button
@@ -543,10 +587,23 @@ export default function HomeroomReportCards() {
                   Select all ({visibleStudents.length} students)
                 </span>
               </label>
-              <label className="relative ml-auto w-full max-w-xs">
+              <div className="relative ml-auto w-full max-w-xs">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search name or student ID" className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100" />
-              </label>
+                <input
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Search name or student ID..."
+                  className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-9 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
             </div>
             <span className="text-xs text-gray-400 font-semibold">
               Expand a student row to edit competency grades and remarks
@@ -557,6 +614,23 @@ export default function HomeroomReportCards() {
             <div className="p-8 text-center text-gray-400">
               <FileText className="w-10 h-10 mx-auto mb-2 opacity-30" />
               <p className="font-semibold">No students enrolled in this section.</p>
+            </div>
+          ) : visibleStudents.length === 0 ? (
+            <div className="p-12 text-center">
+              <div className="flex flex-col items-center justify-center max-w-sm mx-auto text-center">
+                <Search className="w-10 h-10 text-gray-300 mb-3" />
+                <h4 className="text-sm font-semibold text-gray-900 mb-1">No matching students found</h4>
+                <p className="text-xs text-gray-500 mb-4">
+                  No students in this section match "{searchQuery}". Check the spelling or clear your search.
+                </p>
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  Clear Search
+                </button>
+              </div>
             </div>
           ) : (
             <div className="divide-y">

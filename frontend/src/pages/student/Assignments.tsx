@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Badge } from '../../components/ui/badge';
-import { FileText, Calendar, Paperclip, ExternalLink, Search } from 'lucide-react';
+import { FileText, Calendar, Paperclip, ExternalLink, Search, X } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { toast } from 'sonner';
 import { api } from '../../lib/api';
@@ -27,9 +27,10 @@ interface FormattedAssignment {
   teacherName: string;
 }
 
-const Assignments = ({ searchQuery }: { searchQuery: string }) => {
+const Assignments = ({ searchQuery = '' }: { searchQuery?: string }) => {
   const navigate = useNavigate();
   const [assignments, setAssignments] = useState<FormattedAssignment[]>([]);
+  const [localSearch, setLocalSearch] = useState('');
   const [selectedSubject, setSelectedSubject] = useState<string>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
   const [loading, setLoading] = useState(true);
@@ -95,16 +96,16 @@ const Assignments = ({ searchQuery }: { searchQuery: string }) => {
     return Array.from(set).sort();
   }, [assignments]);
 
-  const filteredAssignments = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
+  const effectiveSearch = (localSearch || searchQuery || '').trim().toLowerCase();
 
+  const filteredAssignments = useMemo(() => {
     return assignments.filter((assignment) => {
       // 1. Text Search Filter
-      const matchesSearch = !query ||
-        assignment.title.toLowerCase().includes(query) ||
-        assignment.subjectName.toLowerCase().includes(query) ||
-        assignment.description.toLowerCase().includes(query) ||
-        assignment.teacherName.toLowerCase().includes(query);
+      const matchesSearch = !effectiveSearch ||
+        assignment.title.toLowerCase().includes(effectiveSearch) ||
+        assignment.subjectName.toLowerCase().includes(effectiveSearch) ||
+        assignment.description.toLowerCase().includes(effectiveSearch) ||
+        assignment.teacherName.toLowerCase().includes(effectiveSearch);
 
       // 2. Subject Filter
       const matchesSubject = selectedSubject === 'ALL' || assignment.subjectName === selectedSubject;
@@ -114,7 +115,7 @@ const Assignments = ({ searchQuery }: { searchQuery: string }) => {
 
       return matchesSearch && matchesSubject && matchesStatus;
     });
-  }, [assignments, searchQuery, selectedSubject, selectedStatus]);
+  }, [assignments, effectiveSearch, selectedSubject, selectedStatus]);
 
   if (loading) {
     return <div className="p-8 text-center text-gray-500">Loading your assignments...</div>;
@@ -130,18 +131,39 @@ const Assignments = ({ searchQuery }: { searchQuery: string }) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Assignments & Homework</h2>
           <p className="text-sm text-gray-500">View and submit assignments from your teachers.</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* In-page Search Input */}
+          <div className="relative w-full sm:w-56">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search assignments..."
+              value={localSearch}
+              onChange={(e) => setLocalSearch(e.target.value)}
+              className="w-full bg-white border border-gray-200 text-xs rounded-xl pl-9 pr-8 py-2 outline-none focus:ring-2 focus:ring-blue-500/20 shadow-sm"
+            />
+            {localSearch && (
+              <button
+                type="button"
+                onClick={() => setLocalSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
           {/* Subject Filter */}
           <select 
             aria-label="Filter by Subject"
             value={selectedSubject}
             onChange={(e) => setSelectedSubject(e.target.value)}
-            className="bg-white border border-gray-200 text-xs font-bold text-gray-700 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+            className="bg-white border border-gray-200 text-xs font-bold text-gray-700 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer shadow-sm"
           >
             <option value="ALL">All Subjects ({assignments.length})</option>
             {availableSubjects.map((subj) => (
@@ -156,7 +178,7 @@ const Assignments = ({ searchQuery }: { searchQuery: string }) => {
             aria-label="Filter by Status"
             value={selectedStatus}
             onChange={(e) => setSelectedStatus(e.target.value)}
-            className="bg-white border border-gray-200 text-xs font-bold text-gray-700 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+            className="bg-white border border-gray-200 text-xs font-bold text-gray-700 rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer shadow-sm"
           >
             <option value="ALL">All Status</option>
             <option value="pending">Pending</option>
@@ -175,8 +197,20 @@ const Assignments = ({ searchQuery }: { searchQuery: string }) => {
             <EmptyDescription>
               {assignments.length === 0 
                 ? 'New assignments from your teachers will appear here.' 
-                : 'Try adjusting your search or category filters to find what you are looking for.'}
+                : effectiveSearch
+                ? `No assignments found matching "${effectiveSearch}".`
+                : 'Try adjusting your category or status filters to find what you are looking for.'}
             </EmptyDescription>
+            {effectiveSearch && (
+              <button
+                type="button"
+                onClick={() => setLocalSearch('')}
+                className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors mx-auto"
+              >
+                <X className="w-3.5 h-3.5" />
+                Clear Search
+              </button>
+            )}
           </EmptyHeader>
         </Empty>
       ) : (

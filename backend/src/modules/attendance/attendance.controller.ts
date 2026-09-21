@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, UseGuards, Req, ForbiddenException } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Param, Body, Query, UseGuards, Req, ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -9,6 +9,30 @@ import * as crypto from 'crypto';
 export class AttendanceController {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Helper to resolve all classSectionIds a teacher is authorized for
+   * (combining subject-teaching and homeroom sections).
+   * Returns null if the user is not a teacher (e.g. admin).
+   */
+  private async getTeacherAssignedSectionIds(userId: string): Promise<string[] | null> {
+    const teacher = await this.prisma.teacher.findFirst({
+      where: {
+        OR: [{ id: userId }, { userId: userId }],
+      },
+      select: {
+        id: true,
+        subjectSections: { select: { classSectionId: true } },
+        ClassSection: { select: { id: true } },
+      },
+    });
+
+    if (!teacher) return null; // Caller is not a teacher (e.g. admin)
+
+    const subjectSectionIds = teacher.subjectSections.map((s) => s.classSectionId);
+    const homeroomSectionIds = teacher.ClassSection.map((s) => s.id);
+    return [...new Set([...subjectSectionIds, ...homeroomSectionIds])];
+  }
+
   @Get()
   async getPastAttendance(
     @Req() req: Request & { user: { id: string } },
@@ -17,49 +41,220 @@ export class AttendanceController {
     @Query('status') status?: string,
     @Query('studentName') studentName?: string,
   ) {
-    // Build query filters dynamically
     const where: any = {};
-    const teacher = await this.prisma.teacher.findUnique({ where: { userId: req.user.id }, select: { id: true } });
-    if (teacher) {
-      const assignments = await this.prisma.sectionSubjectTeacher.findMany({ where: { teacherId: teacher.id }, select: { classSectionId: true } });
-      where.classSectionId = { in: assignments.map((assignment) => assignment.classSectionId) };
-    }
-    if (classSectionId) {
+    const assignedSectionIds = await this.getTeacherAssignedSectionIds(req.user.id);
+
+    if (assignedSectionIds !== null) {
+      if (classSectionId) {
+        if (!assignedSectionIds.includes(classSectionId)) {
+          throw new ForbiddenException('You are not authorized to view attendance for this section');
+        }
+        where.classSectionId = classSectionId;
+      } else {
+        where.classSectionId = { in: assignedSectionIds };
+      }
+    } else if (classSectionId) {
       where.classSectionId = classSectionId;
     }
+
     if (date) {
-      // Match records for that specific day
       const startDate = new Date(date);
-      startDate.setHours(0, 0, 0, 0);
+      startDate.setUTCHours(0, 0, 0, 0);
       const endDate = new Date(date);
-      endDate.setHours(23, 59, 59, 999);
+      endDate.setUTCHours(23, 59, 59, 999);
 
       where.date = {
         gte: startDate,
         lte: endDate,
       };
     }
+
     if (status) where.status = status;
     if (studentName) {
-      where.Student = {
-        OR: [
-          { firstName: { contains: studentName, mode: 'insensitive' } },
-          { lastName: { contains: studentName, mode: 'insensitive' } },
-        ],
-      };
+      const s = studentName.trim();
+      const parts = s.split(/\s+/).filter(Boolean);
+      if (parts.length > 1) {
+        where.Student = {
+          AND: parts.map((part) => ({
+            OR: [
+              { firstName: { contains: part, mode: 'insensitive' } },
+              { lastName: { contains: part, mode: 'insensitive' } },
+              { fatherName: { contains: part, mode: 'insensitive' } },
+            ],
+          })),
+        };
+      } else {
+        where.Student = {
+          OR: [
+            { firstName: { contains: s, mode: 'insensitive' } },
+            { lastName: { contains: s, mode: 'insensitive' } },
+            { admissionNo: { contains: s, mode: 'insensitive' } },
+          ],
+        };
+      }
     }
 
     const records = await this.prisma.studentAttendance.findMany({
       where,
       include: {
-        Student: true, // Includes student details if your relation is named 'Student'
+        Student: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            admissionNo: true,
+          },
+        },
+        ClassSection: {
+          select: {
+            id: true,
+            name: true,
+            GradeLevel: { select: { name: true } },
+          },
+        },
       },
-      orderBy: {
-        date: 'desc',
-      },
+      orderBy: [
+        { date: 'desc' },
+        { createdAt: 'desc' },
+      ],
     });
 
     return records;
+  }
+
+  @Get('students')
+  async getSectionStudents(
+    @Req() req: Request & { user: { id: string } },
+    @Query('classSectionId') classSectionId: string,
+  ) {
+    if (!classSectionId) {
+      throw new BadRequestException('classSectionId is required');
+    }
+
+    const assignedSectionIds = await this.getTeacherAssignedSectionIds(req.user.id);
+    if (assignedSectionIds !== null && !assignedSectionIds.includes(classSectionId)) {
+      throw new ForbiddenException('You are not authorized to access students of this section');
+    }
+
+    // Check StudentEnrollment first
+    const enrollments = await this.prisma.studentEnrollment.findMany({
+      where: {
+        classSectionId,
+        status: 'ACTIVE',
+      },
+      select: {
+        Student: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            admissionNo: true,
+          },
+        },
+      },
+      orderBy: [{ Student: { lastName: 'asc' } }, { Student: { firstName: 'asc' } }],
+    });
+
+    if (enrollments.length > 0) {
+      return enrollments.map((e) => ({
+        id: e.Student.id,
+        firstName: e.Student.firstName,
+        lastName: e.Student.lastName,
+        name: `${e.Student.firstName} ${e.Student.lastName}`.trim(),
+        admissionNo: e.Student.admissionNo,
+        status: 'PRESENT',
+      }));
+    }
+
+    // Fallback to direct Student records
+    const students = await this.prisma.student.findMany({
+      where: {
+        classSectionId,
+        status: 'ACTIVE',
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        admissionNo: true,
+      },
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+    });
+
+    return students.map((s) => ({
+      id: s.id,
+      firstName: s.firstName,
+      lastName: s.lastName,
+      name: `${s.firstName} ${s.lastName}`.trim(),
+      admissionNo: s.admissionNo,
+      status: 'PRESENT',
+    }));
+  }
+
+  @Patch(':id')
+  async updateAttendanceRecord(
+    @Param('id') id: string,
+    @Body() body: { status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED'; remarks?: string },
+    @Req() req: Request & { user: { id: string } },
+  ) {
+    const existing = await this.prisma.studentAttendance.findUnique({
+      where: { id },
+      select: { id: true, classSectionId: true },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Attendance record not found');
+    }
+
+    const assignedSectionIds = await this.getTeacherAssignedSectionIds(req.user.id);
+    if (assignedSectionIds !== null && !assignedSectionIds.includes(existing.classSectionId)) {
+      throw new ForbiddenException('You are not authorized to edit attendance for this section');
+    }
+
+    const updated = await this.prisma.studentAttendance.update({
+      where: { id },
+      data: {
+        status: body.status,
+        remarks: body.remarks !== undefined ? body.remarks : undefined,
+        recordedById: req.user.id,
+        updatedAt: new Date(),
+      },
+      include: {
+        Student: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            admissionNo: true,
+          },
+        },
+        ClassSection: {
+          select: {
+            id: true,
+            name: true,
+            GradeLevel: { select: { name: true } },
+          },
+        },
+      },
+    });
+
+    return {
+      message: 'Attendance record updated successfully',
+      record: {
+        id: updated.id,
+        studentId: updated.studentId,
+        studentName: `${updated.Student?.firstName || ''} ${updated.Student?.lastName || ''}`.trim(),
+        admissionNo: updated.Student?.admissionNo || null,
+        classSectionId: updated.classSectionId,
+        className: updated.ClassSection
+          ? `${updated.ClassSection.GradeLevel?.name ? `Grade ${updated.ClassSection.GradeLevel.name} - ` : ''}${updated.ClassSection.name}`
+          : 'Assigned Class',
+        date: updated.date.toISOString(),
+        period: updated.period ?? 1,
+        status: updated.status,
+        remarks: updated.remarks || '',
+      },
+    };
   }
 
   @Post()
@@ -68,24 +263,23 @@ export class AttendanceController {
     @Req() req: Request & { user: { id: string } }
   ) {
     const { classSectionId, date, period, records } = body;
+    if (!classSectionId || !records || !Array.isArray(records)) {
+      throw new BadRequestException('Invalid attendance submission payload');
+    }
+
+    const assignedSectionIds = await this.getTeacherAssignedSectionIds(req.user.id);
+    if (assignedSectionIds !== null && !assignedSectionIds.includes(classSectionId)) {
+      throw new ForbiddenException('You are not authorized to record attendance for this section');
+    }
+
     const teacherId = req.user?.id;
-    const teacher = await this.prisma.teacher.findUnique({ where: { userId: teacherId }, select: { id: true } });
-    const canRecord = teacher && await this.prisma.sectionSubjectTeacher.findFirst({
-      where: { teacherId: teacher.id, classSectionId },
-      select: { id: true },
-    });
-    const homeroomAccess = teacher && await this.prisma.classSection.findFirst({
-      where: { id: classSectionId, teacherId: teacher.id },
-      select: { id: true },
-    });
-    if (!canRecord && !homeroomAccess) throw new ForbiddenException('You are not assigned to this section');
-    const parsedDate = new Date(date);
-    const parsedPeriod = Number(period);
+    const parsedDate = new Date(date || Date.now());
+    parsedDate.setUTCHours(0, 0, 0, 0);
+    const parsedPeriod = Number(period) || 1;
 
     const attendancePromises = records.map((record: any) => {
       return this.prisma.studentAttendance.upsert({
         where: {
-          // Note: This matches the unique composite key in your schema
           studentId_date_period: {
             studentId: record.studentId,
             date: parsedDate,
@@ -93,7 +287,8 @@ export class AttendanceController {
           },
         },
         update: {
-          status: record.status, // Update status if already exists
+          status: record.status,
+          remarks: record.remarks || null,
           recordedById: teacherId,
           updatedAt: new Date(),
         },
@@ -105,6 +300,7 @@ export class AttendanceController {
           date: parsedDate,
           period: parsedPeriod,
           status: record.status,
+          remarks: record.remarks || null,
           updatedAt: new Date(),
         } as any,
       });

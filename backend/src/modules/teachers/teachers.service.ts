@@ -5,10 +5,20 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 export class TeachersService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private readonly teacherIdCache = new Map<string, { id: string; expiresAt: number }>();
+  private readonly TEACHER_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+  private cachedCurrentYearId: { id: string | null; expiresAt: number } | null = null;
+
   /**
    * Helper to resolve the Teacher entity ID whether passed a Teacher ID or Auth User ID
    */
   private async resolveTeacherId(idOrUserId: string): Promise<string> {
+    const now = Date.now();
+    const cached = this.teacherIdCache.get(idOrUserId);
+    if (cached && cached.expiresAt > now) {
+      return cached.id;
+    }
+
     const teacher = await this.prisma.teacher.findFirst({
       where: {
         OR: [
@@ -23,6 +33,7 @@ export class TeachersService {
       throw new NotFoundException('Teacher profile not found');
     }
 
+    this.teacherIdCache.set(idOrUserId, { id: teacher.id, expiresAt: now + this.TEACHER_CACHE_TTL_MS });
     return teacher.id;
   }
 
@@ -134,11 +145,28 @@ export class TeachersService {
         select: {
           id: true,
           subjectSections: {
-            select: { subjectId: true, classSectionId: true },
+            select: {
+              subjectId: true,
+              classSectionId: true,
+              academicYearId: true,
+              ClassSection: {
+                select: {
+                  id: true,
+                  name: true,
+                  academicYearId: true,
+                  GradeLevel: { select: { name: true } },
+                },
+              },
+            },
           },
           // Also load homeroom sections so pure homeroom teachers get student counts
           ClassSection: {
-            select: { id: true },
+            select: {
+              id: true,
+              name: true,
+              academicYearId: true,
+              GradeLevel: { select: { name: true } },
+            },
           },
         },
       });
@@ -156,15 +184,58 @@ export class TeachersService {
       // Combined unique section IDs for attendance and student count
       const allSectionIds = [...new Set([...subjectSectionIds, ...homeroomSectionIds])];
 
+      // Build unique assigned sections list for attendance sessions & display
+      const assignedSectionsMap = new Map<string, { id: string; name: string; gradeName?: string; academicYearId?: string }>();
+      for (const cs of teacher.ClassSection) {
+        if (cs.id && !assignedSectionsMap.has(cs.id)) {
+          assignedSectionsMap.set(cs.id, {
+            id: cs.id,
+            name: cs.name,
+            gradeName: cs.GradeLevel?.name,
+            academicYearId: cs.academicYearId || undefined,
+          });
+        }
+      }
+      for (const ss of teacher.subjectSections) {
+        if (ss.ClassSection && !assignedSectionsMap.has(ss.ClassSection.id)) {
+          assignedSectionsMap.set(ss.ClassSection.id, {
+            id: ss.ClassSection.id,
+            name: ss.ClassSection.name,
+            gradeName: ss.ClassSection.GradeLevel?.name,
+            academicYearId: ss.ClassSection.academicYearId || ss.academicYearId || undefined,
+          });
+        }
+      }
+      const uniqueAssignedSections = Array.from(assignedSectionsMap.values());
+
       const [assignmentCount, pendingExamCount, activeStudentCount, attendanceRecords, recentAssignments, recentExams, submittedAssignmentsList] = await Promise.all([
         this.prisma.assignment.count({ where: { teacherId } }),
         this.prisma.examination.count({ where: { teacherId, status: 'PENDING' } }),
         allSectionIds.length ? this.prisma.student.count({ where: { classSectionId: { in: allSectionIds }, status: 'ACTIVE' } }) : 0,
         allSectionIds.length ? this.prisma.studentAttendance.findMany({
           where: { classSectionId: { in: allSectionIds } },
-          select: { status: true },
-          orderBy: { date: 'desc' },
-          take: 100,
+          include: {
+            Student: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                admissionNo: true,
+              },
+            },
+            ClassSection: {
+              select: {
+                id: true,
+                name: true,
+                GradeLevel: { select: { name: true } },
+              },
+            },
+          },
+          orderBy: [
+            { date: 'desc' },
+            { createdAt: 'desc' },
+          ],
+          take: 20,
         }) : [],
         this.prisma.assignment.findMany({ where: { teacherId }, select: { id: true, title: true, createdAt: true }, orderBy: { createdAt: 'desc' }, take: 3 }),
         this.prisma.examination.findMany({ where: { teacherId }, select: { id: true, title: true, status: true, updatedAt: true }, orderBy: { updatedAt: 'desc' }, take: 3 }),
@@ -197,7 +268,12 @@ export class TeachersService {
                 description: true,
               },
             },
-            grades: true,
+            grades: {
+              select: {
+                score: true,
+                maxScore: true,
+              },
+            },
           },
           orderBy: { createdAt: 'desc' },
           take: 50,
@@ -223,7 +299,26 @@ export class TeachersService {
         activeStudentsCount: activeStudentCount,
         assignmentsPublishedCount: assignmentCount,
         pendingExamsCount: pendingExamCount,
-        attendance: { recordsReviewed: attendanceRecords.length, presentCount, absentCount: attendanceRecords.length - presentCount },
+        attendance: {
+          recordsReviewed: attendanceRecords.length,
+          presentCount,
+          absentCount: attendanceRecords.length - presentCount,
+          records: attendanceRecords.map((rec) => ({
+            id: rec.id,
+            studentId: rec.studentId,
+            studentName: `${rec.Student?.firstName || ''} ${rec.Student?.lastName || ''}`.trim() || 'Unnamed Student',
+            admissionNo: rec.Student?.admissionNo || null,
+            classSectionId: rec.classSectionId,
+            className: rec.ClassSection
+              ? `${rec.ClassSection.GradeLevel?.name ? `Grade ${rec.ClassSection.GradeLevel.name} - ` : ''}${rec.ClassSection.name}`
+              : 'Assigned Class',
+            date: rec.date.toISOString(),
+            period: rec.period ?? 1,
+            status: rec.status,
+            remarks: rec.remarks || '',
+          })),
+          assignedSections: uniqueAssignedSections,
+        },
         recentActions: actions,
         submittedAssignments: submittedAssignmentsList.map((sub) => ({
           id: sub.id,
@@ -240,6 +335,7 @@ export class TeachersService {
           fileName: sub.fileName || null,
           fileUrl: sub.fileUrl || null,
           fileSize: sub.fileSize || null,
+          feedback: (sub as any).feedback || null,
           isGraded: sub.grades.length > 0,
           grade: sub.grades[0] ? { score: sub.grades[0].score, maxScore: sub.grades[0].maxScore } : null,
         })),
@@ -254,27 +350,33 @@ export class TeachersService {
   }
 
   async getMyHomeroomContext(userId: string) {
-    // Resolve current academic year; fall back to the most recent year if none
-    // is flagged isCurrent (prevents returning an arbitrary old section via take:1).
-    let currentYearId: string | undefined;
-    const currentYear = await this.prisma.academicYear.findFirst({
-      where: { isCurrent: true },
-      select: { id: true },
-    });
-    if (currentYear) {
-      currentYearId = currentYear.id;
+    const now = Date.now();
+
+    // 1. Concurrently resolve active academic year and teacher sections
+    let yearPromise: Promise<{ id: string } | null>;
+    if (this.cachedCurrentYearId && this.cachedCurrentYearId.expiresAt > now) {
+      yearPromise = Promise.resolve(this.cachedCurrentYearId.id ? { id: this.cachedCurrentYearId.id } : null);
     } else {
-      const latestYear = await this.prisma.academicYear.findFirst({
-        orderBy: { startDate: 'desc' },
-        select: { id: true },
-      });
-      currentYearId = latestYear?.id;
+      yearPromise = this.prisma.academicYear
+        .findFirst({
+          where: { isCurrent: true },
+          select: { id: true },
+        })
+        .then(async (currentYear) => {
+          if (currentYear) {
+            this.cachedCurrentYearId = { id: currentYear.id, expiresAt: now + 5 * 60 * 1000 };
+            return currentYear;
+          }
+          const latestYear = await this.prisma.academicYear.findFirst({
+            orderBy: { startDate: 'desc' },
+            select: { id: true },
+          });
+          this.cachedCurrentYearId = { id: latestYear?.id ?? null, expiresAt: now + 5 * 60 * 1000 };
+          return latestYear;
+        });
     }
 
-    // A teacher without a profile record is not an error — it just means they
-    // have no homeroom assignment. Return a safe empty response so the sidebar
-    // and homeroom-gated pages display "no section assigned" instead of a 404.
-    const teacher = await this.prisma.teacher.findFirst({
+    const teacherPromise = this.prisma.teacher.findFirst({
       where: { userId },
       select: {
         id: true,
@@ -291,6 +393,9 @@ export class TeachersService {
         },
       },
     });
+
+    const [resolvedYear, teacher] = await Promise.all([yearPromise, teacherPromise]);
+    const currentYearId = resolvedYear?.id;
 
     if (!teacher) {
       return {

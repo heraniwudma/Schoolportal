@@ -1,14 +1,20 @@
-import { Controller, Get, Post, Patch, Param, Body, Query, UseGuards, ValidationPipe, Req } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Param, Body, Query, UseGuards, ValidationPipe, Req, Res, StreamableFile } from '@nestjs/common';
+import { Response } from 'express';
 import { RosterService } from './roster.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { TeachersService } from '../teachers/teachers.service';
+import { PdfExportService } from '../reports/pdf-export.service';
 
 @Controller('roster')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class RosterController {
-  constructor(private readonly rosterService: RosterService, private readonly teachersService: TeachersService) {}
+  constructor(
+    private readonly rosterService: RosterService,
+    private readonly teachersService: TeachersService,
+    private readonly pdfExportService: PdfExportService,
+  ) {}
 
   @Get('consolidated')
   @Roles('TEACHER', 'ADMIN')
@@ -18,6 +24,55 @@ export class RosterController {
     }
     return this.rosterService.getConsolidatedRoster(academicYearId, classSectionId);
   }
+
+  @Get('consolidated/pdf')
+  @Roles('TEACHER', 'ADMIN')
+  async getConsolidatedPdf(
+    @Query('academicYearId') academicYearId: string,
+    @Query('classSectionId') classSectionId: string,
+    @Query('search') search: string,
+    @Req() req: any,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    if (req.user?.role === 'TEACHER') {
+      await this.teachersService.verifyHomeroomAccess(req.user.id, classSectionId);
+    }
+    const data = await this.rosterService.getConsolidatedRoster(academicYearId, classSectionId);
+
+    const effectiveSearch = (search || '').trim().toLowerCase();
+    let filteredStudents = data.students;
+    if (effectiveSearch) {
+      filteredStudents = data.students.filter((s: any) =>
+        (s.studentName || '').toLowerCase().includes(effectiveSearch) ||
+        (s.admissionNo || '').toLowerCase().includes(effectiveSearch) ||
+        (s.sex || '').toLowerCase() === effectiveSearch,
+      );
+    }
+
+    const filteredData = {
+      ...data,
+      students: filteredStudents,
+    };
+
+    const buffer = await this.pdfExportService.generateConsolidatedRosterPdf(
+      filteredData,
+      academicYearId,
+      effectiveSearch,
+    );
+
+    const sectionLabel = data.section?.name || 'Class';
+    const safeSection = sectionLabel.replace(/[^a-zA-Z0-9]/g, '_');
+    const safeYear = (academicYearId || '2025_2026').replace(/[^a-zA-Z0-9]/g, '_');
+    const filename = `Roster_${safeSection}_${safeYear}.pdf`;
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': String(buffer.length),
+    });
+    return new StreamableFile(buffer);
+  }
+
 
   @Patch('students/:studentId/conduct')
   @Roles('TEACHER', 'ADMIN')

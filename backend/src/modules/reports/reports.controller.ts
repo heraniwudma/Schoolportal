@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req, Res, StreamableFile, UseGuards } from '@nestjs/common';
+import { Response } from 'express';
 import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -27,6 +28,32 @@ export class ReportsController {
   }
 
   /**
+   * GET /admin/reports/sections/pdf?academicYearId=...&status=...&search=...
+   *
+   * Exports the filtered class sections summary report as a vector PDF.
+   */
+  @Get('sections/pdf')
+  @Roles(Role.ADMIN)
+  async getSectionsPdf(
+    @Query('academicYearId') academicYearId: string,
+    @Query('status') status: string,
+    @Query('search') search: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { buffer, filename } = await this.reportsService.generateSectionsSummaryPdf(
+      academicYearId,
+      status,
+      search,
+    );
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': String(buffer.length),
+    });
+    return new StreamableFile(buffer);
+  }
+
+  /**
    * GET /admin/reports/roster-reviews?status=...&academicYearId=...&classSectionId=...
    *
    * Admin-only review queue listing with filtering and safe audit metadata.
@@ -39,6 +66,32 @@ export class ReportsController {
     @Query('classSectionId') classSectionId?: string,
   ) {
     return this.reportsService.getRosterReviews({ status, academicYearId, classSectionId });
+  }
+
+  /**
+   * GET /admin/reports/roster-reviews/pdf?status=...&academicYearId=...&search=...
+   *
+   * Exports the filtered roster review queue table as a vector PDF.
+   */
+  @Get('roster-reviews/pdf')
+  @Roles(Role.ADMIN)
+  async getRosterReviewsPdf(
+    @Query('status') status: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('search') search: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { buffer, filename } = await this.reportsService.generateRosterReviewsPdf({
+      status,
+      academicYearId,
+      search,
+    });
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': String(buffer.length),
+    });
+    return new StreamableFile(buffer);
   }
 
   /**
@@ -85,6 +138,32 @@ export class ReportsController {
   }
 
   /**
+   * GET /admin/reports/sections/:classSectionId/report-cards/pdf?academicYearId=…&search=…
+   *
+   * Exports the compiled report cards for students in the section as a vector PDF.
+   */
+  @Get('sections/:classSectionId/report-cards/pdf')
+  @Roles(Role.ADMIN)
+  async getSectionReportCardsPdf(
+    @Param('classSectionId') classSectionId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('search') search: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { buffer, filename } = await this.reportsService.generateSectionReportCardsPdf(
+      classSectionId,
+      academicYearId,
+      search,
+    );
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': String(buffer.length),
+    });
+    return new StreamableFile(buffer);
+  }
+
+  /**
    * GET /admin/reports/roster/:classSectionId/print?academicYearId=…
    *
    * Official printable roster data. Strictly requires ClassRosterReview.status === 'APPROVED'.
@@ -103,6 +182,34 @@ export class ReportsController {
       req.user?.role,
     );
   }
+
+  /**
+   * GET /admin/reports/roster/:classSectionId/print/pdf?academicYearId=…
+   *
+   * Official printable roster as a vector PDF with signatures block. Strictly requires APPROVED status.
+   */
+  @Get('roster/:classSectionId/print/pdf')
+  @Roles(Role.ADMIN, Role.TEACHER)
+  async getOfficialPrintRosterPdf(
+    @Param('classSectionId') classSectionId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Req() req: any,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { buffer, filename } = await this.reportsService.generateOfficialPrintRosterPdf(
+      classSectionId,
+      academicYearId,
+      req.user?.id,
+      req.user?.role,
+    );
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': String(buffer.length),
+    });
+    return new StreamableFile(buffer);
+  }
+
 
   /**
    * GET /admin/reports/roster-status/:classSectionId?academicYearId=…

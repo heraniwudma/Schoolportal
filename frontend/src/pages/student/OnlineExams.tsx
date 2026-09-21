@@ -2,9 +2,11 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   AlertCircle, Clock, Lock, ArrowRight, RefreshCw,
   CheckCircle2, Timer, BookOpen, BadgeCheck, Hourglass, Eye,
+  Search, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../lib/api';
+import { useOutletContext } from 'react-router-dom';
 import ExamSession, { LiveExamData } from './ExamSession';
 import ExamReviewModal from './ExamReviewModal';
 
@@ -108,8 +110,9 @@ function CountdownCell({
 
 // ─── Main component ────────────────────────────────────────────────────────────
 
-export default function OnlineExams() {
+export default function OnlineExams({ searchQuery: propSearchQuery = '' }: { searchQuery?: string } = {}) {
   const [exams, setExams] = useState<AvailableExam[]>([]);
+  const [localSearch, setLocalSearch] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [startingExamId, setStartingExamId] = useState<string | null>(null);
   const [reviewingExamId, setReviewingExamId] = useState<string | null>(null);
@@ -273,24 +276,52 @@ export default function OnlineExams() {
     );
   }
 
-  // ── Exam list ──────────────────────────────────────────────────────────────
+  const outletCtx = useOutletContext<{ searchQuery?: string } | null>();
+  const effectiveSearch = (localSearch || propSearchQuery || outletCtx?.searchQuery || '').trim().toLowerCase();
+  const filteredExams = exams.filter((exam) => {
+    if (!effectiveSearch) return true;
+    const titleMatch = exam.title.toLowerCase().includes(effectiveSearch);
+    const subjectMatch = exam.subject?.name ? exam.subject.name.toLowerCase().includes(effectiveSearch) : false;
+    return titleMatch || subjectMatch;
+  });
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* Header & Search Toolbar */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Online Examinations</h2>
           <p className="text-sm text-gray-500">Your scheduled exams and live session controls.</p>
         </div>
-        <button
-          onClick={() => loadExams()}
-          disabled={isLoading}
-          className="flex items-center gap-2 px-4 py-2 bg-gray-50 border border-gray-100 rounded-xl text-sm font-semibold text-gray-600 hover:bg-blue-50 hover:text-blue-900 transition-all disabled:opacity-50"
-        >
-          <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-3 w-full md:w-auto">
+          <div className="relative flex-1 md:w-64">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search by title or subject..."
+              value={localSearch}
+              onChange={(e) => setLocalSearch(e.target.value)}
+              className="w-full pl-10 pr-9 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all text-gray-800 placeholder-gray-400 shadow-sm"
+            />
+            {localSearch && (
+              <button
+                onClick={() => setLocalSearch('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors p-0.5"
+                title="Clear search"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          <button
+            onClick={() => loadExams()}
+            disabled={isLoading}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-blue-50 hover:text-blue-900 transition-all disabled:opacity-50 shadow-sm whitespace-nowrap"
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Notice */}
@@ -325,9 +356,24 @@ export default function OnlineExams() {
             Exams that your teacher has published and scheduled will appear here with a live countdown timer.
           </p>
         </div>
+      ) : filteredExams.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-12 text-center">
+          <Search className="w-10 h-10 mx-auto mb-3 text-gray-300" />
+          <p className="font-semibold text-gray-700">No exams match your search</p>
+          <p className="text-sm text-gray-400 mt-1">
+            No examinations found matching "{localSearch || propSearchQuery}".
+          </p>
+          <button
+            onClick={() => setLocalSearch('')}
+            className="mt-4 inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+          >
+            <X className="w-3.5 h-3.5" />
+            Clear search
+          </button>
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {exams.map((exam) => {
+          {filteredExams.map((exam) => {
             const isStarting = startingExamId === exam.id;
             const session = exam.session;
 

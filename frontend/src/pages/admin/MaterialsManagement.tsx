@@ -141,10 +141,13 @@ const MaterialsManagement = () => {
     setIsUploading(true);
   };
 
+  const q = searchQuery.trim().toLowerCase();
   const filteredMaterials = materials.filter(item => {
-    const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          (item.description && item.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
-                          (item.category && item.category.toLowerCase().includes(searchQuery.toLowerCase()));
+    const matchesSearch = !q ||
+      item.title.toLowerCase().includes(q) || 
+      (item.description && item.description.toLowerCase().includes(q)) ||
+      (item.category && item.category.toLowerCase().includes(q)) ||
+      (item.target_role && item.target_role.toLowerCase().includes(q));
     
     const matchesCategory = filterCategory === 'All Categories' || 
                             (item.category && item.category.toLowerCase() === filterCategory.toLowerCase());
@@ -321,11 +324,20 @@ const MaterialsManagement = () => {
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input
             type="text"
-            placeholder="Search materials..."
+            placeholder="Search materials by title, description, category, or role..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-12 pr-6 py-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 font-bold transition-all"
+            className="w-full pl-12 pr-12 py-4 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 font-bold transition-all"
           />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-200/50 transition-colors"
+              title="Clear search"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
         <div className="flex gap-4">
           <select 
@@ -349,8 +361,29 @@ const MaterialsManagement = () => {
       ) : filteredMaterials.length === 0 ? (
         <div className="text-center py-12 bg-white rounded-[2rem] shadow-sm border border-gray-100">
           <Book className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-          <p className="text-lg font-bold text-gray-600">No materials found.</p>
-          <p className="text-sm text-gray-400">Upload a new material or clear your search filters.</p>
+          <p className="text-lg font-bold text-gray-600">
+            {searchQuery.trim() ? (
+              <>No materials matching &ldquo;{searchQuery.trim()}&rdquo;</>
+            ) : (
+              'No materials found.'
+            )}
+          </p>
+          <p className="text-sm text-gray-400 mt-1">
+            {searchQuery.trim() || filterCategory !== 'All Categories'
+              ? 'Try adjusting your search keywords or category filter.'
+              : 'Upload a new material or clear your search filters.'}
+          </p>
+          {(searchQuery || filterCategory !== 'All Categories') && (
+            <button
+              onClick={() => {
+                setSearchQuery('');
+                setFilterCategory('All Categories');
+              }}
+              className="mt-4 px-4 py-2 bg-blue-50 text-blue-900 rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-blue-100 transition-colors"
+            >
+              Reset Filters
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">

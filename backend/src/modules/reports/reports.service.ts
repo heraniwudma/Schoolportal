@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CalculationService } from '../results/calculation.service';
+import { PdfExportService } from './pdf-export.service';
 
 // ─── Shared grade-letter helper ───────────────────────────────────────────────
 function gradeLetter(pct: number): string {
@@ -14,12 +15,15 @@ function gradeLetter(pct: number): string {
 @Injectable()
 export class ReportsService {
   private readonly calcService: CalculationService;
+  private readonly pdfService: PdfExportService;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly calculationService?: CalculationService,
+    private readonly pdfExportService?: PdfExportService,
   ) {
     this.calcService = calculationService ?? new CalculationService(prisma);
+    this.pdfService = pdfExportService ?? new PdfExportService();
   }
 
   // ── Existing homeroom roster ─────────────────────────────────────────────
@@ -1257,4 +1261,170 @@ export class ReportsService {
       paperRows,
     };
   }
+
+  // ─── PDF Export Methods ────────────────────────────────────────────────────
+
+  async generateSectionsSummaryPdf(academicYearId?: string, status?: string, search?: string) {
+    let yearId = academicYearId;
+    if (!yearId) {
+      const current = await this.prisma.academicYear.findFirst({
+        where: { isCurrent: true },
+        select: { id: true, year: true },
+      });
+      yearId = current?.id;
+    }
+
+    const academicYear = yearId
+      ? await this.prisma.academicYear.findUnique({ where: { id: yearId } })
+      : null;
+    const yearName = academicYear?.year || '2025/2026';
+
+    const allSections = await this.getAdminSectionsSummary(yearId);
+
+    // Filter by search and status
+    const effectiveSearch = (search || '').trim().toLowerCase();
+    const filtered = allSections.filter((sec) => {
+      const matchesSearch =
+        !effectiveSearch ||
+        (sec.displayName || '').toLowerCase().includes(effectiveSearch) ||
+        (sec.name || '').toLowerCase().includes(effectiveSearch) ||
+        (sec.homeroomTeacher || '').toLowerCase().includes(effectiveSearch) ||
+        (sec.gradeLevelName || '').toLowerCase().includes(effectiveSearch) ||
+        (sec.status || '').toLowerCase().includes(effectiveSearch);
+
+      const matchesStatus = !status || status === 'All' || sec.status === status;
+      return matchesSearch && matchesStatus;
+    });
+
+    const buffer = await this.pdfService.generateSectionsSummaryPdf(filtered, yearName, {
+      status,
+      search: effectiveSearch,
+    });
+
+    const safeYear = yearName.replace(/[^a-zA-Z0-9]/g, '_');
+    const filename = `Report_Summary_${safeYear}.pdf`;
+
+    return { buffer, filename };
+  }
+
+  async generateSectionReportCardsPdf(classSectionId: string, academicYearId: string, search?: string) {
+    if (!classSectionId || !academicYearId) {
+      throw new BadRequestException('Class Section ID and Academic Year ID are required');
+    }
+
+    const section = await this.prisma.classSection.findUnique({
+      where: { id: classSectionId },
+      include: { GradeLevel: true, Teacher: true, AcademicYear: true },
+    });
+    if (!section) throw new NotFoundException('Class section not found');
+
+    const yearName = section.AcademicYear?.year || academicYearId;
+    const allReportCards = await this.getCompiledReportCards(classSectionId, academicYearId);
+
+    const effectiveSearch = (search || '').trim().toLowerCase();
+    const filtered = effectiveSearch
+      ? allReportCards.filter(
+          (st) =>
+            `${st.firstName || ''} ${st.lastName || ''}`.toLowerCase().includes(effectiveSearch) ||
+            (st.admissionNo || '').toLowerCase().includes(effectiveSearch),
+        )
+      : allReportCards;
+
+    const gradeLabel = section.GradeLevel?.name || '';
+    const sectionDisplay = /^grade\b/i.test(gradeLabel)
+      ? `${gradeLabel} ${section.name}`
+      : `Grade ${gradeLabel} ${section.name}`.trim();
+
+    const buffer = await this.pdfService.generateCompiledReportCardsPdf(
+      filtered,
+      {
+        displayName: sectionDisplay,
+        name: section.name,
+        gradeLevel: gradeLabel,
+        homeroomTeacher: section.Teacher
+          ? `${section.Teacher.firstName} ${section.Teacher.lastName}`.trim()
+          : 'Unassigned',
+        academicYear: yearName,
+      },
+      yearName,
+      effectiveSearch,
+    );
+
+    const safeSection = sectionDisplay.replace(/[^a-zA-Z0-9]/g, '_');
+    const safeYear = yearName.replace(/[^a-zA-Z0-9]/g, '_');
+    const filename = `Student_Report_${safeSection}_${safeYear}.pdf`;
+
+    return { buffer, filename };
+  }
+
+  async generateRosterReviewsPdf(params: { status?: string; academicYearId?: string; search?: string }) {
+    let yearId = params.academicYearId;
+    if (!yearId) {
+      const current = await this.prisma.academicYear.findFirst({
+        where: { isCurrent: true },
+        select: { id: true, year: true },
+      });
+      yearId = current?.id;
+    }
+
+    const academicYear = yearId
+      ? await this.prisma.academicYear.findUnique({ where: { id: yearId } })
+      : null;
+    const yearName = academicYear?.year || '2025/2026';
+
+    const reviews = await this.getRosterReviews({
+      status: params.status,
+      academicYearId: yearId,
+    });
+
+    const effectiveSearch = (params.search || '').trim().toLowerCase();
+    const filtered = effectiveSearch
+      ? reviews.filter(
+          (r: any) =>
+            (r.displayName || '').toLowerCase().includes(effectiveSearch) ||
+            (r.sectionName || '').toLowerCase().includes(effectiveSearch) ||
+            (r.homeroomTeacher || '').toLowerCase().includes(effectiveSearch) ||
+            (r.gradeLevelName || '').toLowerCase().includes(effectiveSearch) ||
+            (r.status || '').toLowerCase().includes(effectiveSearch),
+        )
+      : reviews;
+
+    const buffer = await this.pdfService.generateRosterReviewsSummaryPdf(filtered, yearName, {
+      status: params.status,
+      search: effectiveSearch,
+    });
+
+    const safeYear = yearName.replace(/[^a-zA-Z0-9]/g, '_');
+    const filename = `Roster_Review_Queue_${safeYear}.pdf`;
+
+    return { buffer, filename };
+  }
+
+  async generateOfficialPrintRosterPdf(
+    classSectionId: string,
+    academicYearId: string,
+    userId?: string,
+    userRole?: string,
+  ) {
+    const officialData = await this.getOfficialPrintRoster(
+      classSectionId,
+      academicYearId,
+      userId,
+      userRole,
+    );
+
+    const buffer = await this.pdfService.generateOfficialPaperRosterPdf(officialData);
+
+    const sectionName = officialData.officialHeader?.sectionName || 'Class';
+    const gradeLevel = officialData.officialHeader?.gradeLevel || '';
+    const safeSection = `${gradeLevel}_${sectionName}`.replace(/[^a-zA-Z0-9]/g, '_');
+    const safeYear = (officialData.officialHeader?.academicYear || '2025_2026').replace(
+      /[^a-zA-Z0-9]/g,
+      '_',
+    );
+    const filename = `Official_Roster_${safeSection}_${safeYear}.pdf`;
+
+    return { buffer, filename };
+  }
 }
+

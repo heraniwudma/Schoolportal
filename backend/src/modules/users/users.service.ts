@@ -185,13 +185,82 @@ export class UsersService {
 
     if (query.search) {
       const s = query.search.trim();
-      where.OR = [
+      const parts = s.split(/\s+/).filter(Boolean);
+
+      const orConditions: Prisma.UserWhereInput[] = [
         { loginId: { contains: s, mode: 'insensitive' } },
         { email: { contains: s, mode: 'insensitive' } },
-        { Student: { OR: [{ firstName: { contains: s, mode: 'insensitive' } }, { lastName: { contains: s, mode: 'insensitive' } }, { admissionNo: { contains: s, mode: 'insensitive' } }] } },
-        { Teacher: { OR: [{ firstName: { contains: s, mode: 'insensitive' } }, { lastName: { contains: s, mode: 'insensitive' } }, { staffId: { contains: s, mode: 'insensitive' } }] } },
-        { Parent: { OR: [{ firstName: { contains: s, mode: 'insensitive' } }, { lastName: { contains: s, mode: 'insensitive' } }] } },
+        { name: { contains: s, mode: 'insensitive' } },
+        { phoneNumber: { contains: s, mode: 'insensitive' } },
+        {
+          Student: {
+            OR: [
+              { firstName: { contains: s, mode: 'insensitive' } },
+              { lastName: { contains: s, mode: 'insensitive' } },
+              { fatherName: { contains: s, mode: 'insensitive' } },
+              { admissionNo: { contains: s, mode: 'insensitive' } },
+              { emergencyContact: { contains: s, mode: 'insensitive' } },
+            ],
+          },
+        },
+        {
+          Teacher: {
+            OR: [
+              { firstName: { contains: s, mode: 'insensitive' } },
+              { lastName: { contains: s, mode: 'insensitive' } },
+              { staffId: { contains: s, mode: 'insensitive' } },
+              { phoneNumber: { contains: s, mode: 'insensitive' } },
+            ],
+          },
+        },
+        {
+          Parent: {
+            OR: [
+              { firstName: { contains: s, mode: 'insensitive' } },
+              { lastName: { contains: s, mode: 'insensitive' } },
+              { phoneNumber: { contains: s, mode: 'insensitive' } },
+            ],
+          },
+        },
       ];
+
+      if (parts.length > 1) {
+        orConditions.push(
+          {
+            Student: {
+              AND: parts.map((part) => ({
+                OR: [
+                  { firstName: { contains: part, mode: 'insensitive' } },
+                  { lastName: { contains: part, mode: 'insensitive' } },
+                  { fatherName: { contains: part, mode: 'insensitive' } },
+                ],
+              })),
+            },
+          },
+          {
+            Teacher: {
+              AND: parts.map((part) => ({
+                OR: [
+                  { firstName: { contains: part, mode: 'insensitive' } },
+                  { lastName: { contains: part, mode: 'insensitive' } },
+                ],
+              })),
+            },
+          },
+          {
+            Parent: {
+              AND: parts.map((part) => ({
+                OR: [
+                  { firstName: { contains: part, mode: 'insensitive' } },
+                  { lastName: { contains: part, mode: 'insensitive' } },
+                ],
+              })),
+            },
+          },
+        );
+      }
+
+      where.OR = orConditions;
     }
 
     return where;

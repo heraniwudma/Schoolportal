@@ -18,14 +18,17 @@ import { EducationalVideo, getStudentVideos } from '../../api/videos';
 interface Props {
   limit?: number;
   showHeader?: boolean;
+  searchQuery?: string;
 }
 
-export default function StudentVideoLessons({ limit, showHeader = true }: Props) {
+export default function StudentVideoLessons({ limit, showHeader = true, searchQuery: propSearchQuery = '' }: Props) {
   const [videos, setVideos] = useState<EducationalVideo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>('ALL');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [localSearch, setLocalSearch] = useState('');
   const [playingVideo, setPlayingVideo] = useState<EducationalVideo | null>(null);
+
+  const effectiveSearch = (localSearch || propSearchQuery).trim().toLowerCase();
 
   const loadVideos = useCallback(async () => {
     setIsLoading(true);
@@ -58,11 +61,11 @@ export default function StudentVideoLessons({ limit, showHeader = true }: Props)
   }));
 
   const filteredVideos = videos.filter((v) => {
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
+    if (effectiveSearch) {
+      const q = effectiveSearch;
       const titleMatch = v.title.toLowerCase().includes(q);
       const descMatch = (v.description || '').toLowerCase().includes(q);
-      const teacherMatch = `${v.Teacher?.firstName} ${v.Teacher?.lastName}`.toLowerCase().includes(q);
+      const teacherMatch = `${v.Teacher?.firstName || ''} ${v.Teacher?.lastName || ''}`.toLowerCase().includes(q);
       const subjectMatch = (v.Subject?.name || '').toLowerCase().includes(q);
       return titleMatch || descMatch || teacherMatch || subjectMatch;
     }
@@ -74,7 +77,7 @@ export default function StudentVideoLessons({ limit, showHeader = true }: Props)
   return (
     <div className="bg-white rounded-3xl p-6 md:p-8 shadow-sm border border-gray-100 space-y-6">
       {/* Header */}
-      {showHeader && (
+      {showHeader ? (
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center shadow-sm shrink-0">
@@ -99,10 +102,19 @@ export default function StudentVideoLessons({ limit, showHeader = true }: Props)
               <input
                 type="text"
                 placeholder="Search topics..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500"
+                value={localSearch}
+                onChange={(e) => setLocalSearch(e.target.value)}
+                className="w-full pl-9 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-gray-800 placeholder-gray-400"
               />
+              {localSearch && (
+                <button
+                  onClick={() => setLocalSearch('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
+                  title="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
 
             <button
@@ -114,6 +126,37 @@ export default function StudentVideoLessons({ limit, showHeader = true }: Props)
               <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
             </button>
           </div>
+        </div>
+      ) : (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search video lessons by title, topic, or teacher..."
+              value={localSearch}
+              onChange={(e) => setLocalSearch(e.target.value)}
+              className="w-full pl-9 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-gray-800 placeholder-gray-400"
+            />
+            {localSearch && (
+              <button
+                onClick={() => setLocalSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
+                title="Clear search"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          <button
+            onClick={loadVideos}
+            disabled={isLoading}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-xl transition-colors shrink-0 self-start sm:self-auto"
+            title="Refresh videos"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
         </div>
       )}
 
@@ -156,7 +199,7 @@ export default function StudentVideoLessons({ limit, showHeader = true }: Props)
           <RefreshCw className="w-8 h-8 text-red-600 animate-spin mx-auto" />
           <p className="text-xs font-semibold text-gray-400">Loading your video lessons...</p>
         </div>
-      ) : displayedVideos.length === 0 ? (
+      ) : videos.length === 0 ? (
         <div className="py-12 text-center bg-gray-50/60 rounded-2xl border border-dashed border-gray-200 p-6 space-y-2">
           <Sparkles className="w-8 h-8 text-gray-300 mx-auto" />
           <p className="text-sm font-bold text-gray-700">No video lessons available</p>
@@ -165,6 +208,21 @@ export default function StudentVideoLessons({ limit, showHeader = true }: Props)
               ? 'No videos found for this subject. Try switching back to "All Subjects".'
               : 'Your teachers have not published any approved video lessons for your section yet. Check back soon!'}
           </p>
+        </div>
+      ) : displayedVideos.length === 0 ? (
+        <div className="py-12 text-center bg-gray-50/60 rounded-2xl border border-dashed border-gray-200 p-6 space-y-2">
+          <Search className="w-8 h-8 text-gray-300 mx-auto" />
+          <p className="text-sm font-bold text-gray-700">No matching video lessons</p>
+          <p className="text-xs text-gray-400 max-w-sm mx-auto">
+            No video lessons found matching "{localSearch || propSearchQuery}".
+          </p>
+          <button
+            onClick={() => setLocalSearch('')}
+            className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
+          >
+            <X className="w-3.5 h-3.5" />
+            Clear search
+          </button>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">

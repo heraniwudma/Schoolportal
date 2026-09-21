@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Bell, Send, Trash2, Calendar, Archive, Clock, Eye, X, Edit2 } from 'lucide-react';
+import { Bell, Send, Trash2, Calendar, Archive, Clock, Eye, X, Edit2, Search } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { useOutletContext } from 'react-router-dom';
 import { Toaster, toast } from 'sonner';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getAdminNotices, getUserNotices, createNotice, updateNotice, deleteNotice, Notice } from '../../api/notices';
@@ -12,6 +13,9 @@ const CATEGORIES = ['General', 'Academic', 'Examination', 'Attendance', 'Fees', 
 
 const AnnouncementCenter = () => {
   const queryClient = useQueryClient();
+  const outletContext = useOutletContext<{ searchQuery?: string }>();
+  const globalSearchQuery = outletContext?.searchQuery || '';
+  const [localSearch, setLocalSearch] = useState('');
   const { user } = useAuth();
   const { activeAcademicYearId } = useAcademicYear();
   const isAdmin = user?.role === 'admin';
@@ -138,9 +142,20 @@ const AnnouncementCenter = () => {
     }
   };
 
+  const rawSearch = localSearch || globalSearchQuery || '';
+  const q = rawSearch.trim().toLowerCase();
+
   const filteredNotices = notices.filter(n => {
     if (filterStatus !== 'ALL' && n.status !== filterStatus) return false;
     if (filterCategory !== 'ALL' && n.category !== filterCategory) return false;
+    if (q) {
+      const matchTitle = (n.title || '').toLowerCase().includes(q);
+      const matchContent = (n.content || '').toLowerCase().includes(q);
+      const matchCategory = (n.category || '').toLowerCase().includes(q);
+      const matchAuthor = (n.User?.email || '').toLowerCase().includes(q);
+      const matchTarget = (n.targetRole || n.targetType || '').toLowerCase().includes(q);
+      return matchTitle || matchContent || matchCategory || matchAuthor || matchTarget;
+    }
     return true;
   });
 
@@ -308,7 +323,28 @@ const AnnouncementCenter = () => {
           <div className="flex flex-wrap items-center justify-between bg-white p-4 rounded-2xl border border-gray-100 shadow-sm gap-4">
             <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] px-2">Notice Board</h3>
             
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-3 flex-1 justify-end">
+              <div className="relative min-w-[200px] max-w-xs flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search announcements..."
+                  value={localSearch}
+                  onChange={(e) => setLocalSearch(e.target.value)}
+                  className="w-full pl-9 pr-8 py-2 bg-gray-50 border border-gray-100 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                />
+                {localSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setLocalSearch('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 rounded-full"
+                    title="Clear search"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
               <select 
                 className="bg-gray-50 border-none rounded-lg text-xs font-bold text-gray-600 px-3 py-2 outline-none"
                 value={filterCategory}
@@ -341,9 +377,29 @@ const AnnouncementCenter = () => {
               <p className="mt-4 text-gray-500 font-bold">Loading notices...</p>
             </div>
           ) : filteredNotices.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-gray-100">
+            <div className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-gray-100 text-center">
               <Bell className="w-12 h-12 text-gray-200 mb-4" />
-              <p className="text-gray-500 font-bold">No announcements found.</p>
+              <p className="text-gray-900 font-bold text-base">
+                {q ? `No announcements matching "${rawSearch.trim()}"` : 'No announcements found.'}
+              </p>
+              <p className="text-xs text-gray-400 mt-1">
+                {q || filterStatus !== 'ALL' || filterCategory !== 'ALL'
+                  ? 'Try adjusting your search keywords or active filters.'
+                  : 'Check back later for new updates.'}
+              </p>
+              {(localSearch || filterStatus !== 'ALL' || filterCategory !== 'ALL') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLocalSearch('');
+                    setFilterStatus('ALL');
+                    setFilterCategory('ALL');
+                  }}
+                  className="mt-3 px-3.5 py-1.5 text-xs font-semibold text-blue-900 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                >
+                  Reset filters
+                </button>
+              )}
             </div>
           ) : (
             <div className="space-y-4">

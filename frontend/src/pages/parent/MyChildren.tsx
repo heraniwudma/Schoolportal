@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useParent } from '../../context/ParentContext';
 import { getChildAttendance, getChildResults, getChildAssignments } from '../../api/parents';
@@ -13,9 +13,11 @@ import {
   Phone, 
   MapPin, 
   ShieldCheck,
-  AlertCircle
+  AlertCircle,
+  Search,
+  X
 } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useOutletContext } from 'react-router-dom';
 import { useTranslation } from '../../i18n/LanguageContext';
 
 // Micro-component to fetch and render quick stats for each child card
@@ -76,9 +78,22 @@ const ChildCardStats: React.FC<{ childId: string }> = ({ childId }) => {
 };
 
 const MyChildren: React.FC = () => {
+  const outletCtx = useOutletContext<{ searchQuery?: string } | null>();
+  const [localSearch, setLocalSearch] = useState('');
   const { childrenList, selectedChildId, setSelectedChildId, isLoading, error, refetchChildren } = useParent();
   const { t } = useTranslation();
   const navigate = useNavigate();
+
+  const effectiveSearch = (localSearch || outletCtx?.searchQuery || '').trim().toLowerCase();
+
+  const filteredChildren = childrenList.filter((child) => {
+    if (!effectiveSearch) return true;
+    const nameMatch = (child.fullName || '').toLowerCase().includes(effectiveSearch);
+    const admMatch = (child.admissionNo || '').toLowerCase().includes(effectiveSearch);
+    const secMatch = (child.classSection?.name || child.currentEnrollment?.classSection || '').toLowerCase().includes(effectiveSearch);
+    const gradeMatch = (child.classSection?.gradeLevel || child.currentEnrollment?.gradeLevel || '').toLowerCase().includes(effectiveSearch);
+    return nameMatch || admMatch || secMatch || gradeMatch;
+  });
 
   const handleNavigateWithActiveChild = (childId: string, path: string) => {
     setSelectedChildId(childId);
@@ -168,19 +183,59 @@ const MyChildren: React.FC = () => {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => void refetchChildren()}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 hover:border-gray-300 rounded-xl text-xs font-semibold text-gray-700 shadow-xs hover:bg-gray-50 transition-all self-start sm:self-auto"
-        >
-          <RefreshCw className="w-3.5 h-3.5 text-gray-500" />
-          {t('common.actions.refresh')}
-        </button>
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="relative flex-1 sm:w-64">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search by name, ID, or section..."
+              value={localSearch}
+              onChange={(e) => setLocalSearch(e.target.value)}
+              className="w-full bg-white border border-gray-200 rounded-xl pl-9 pr-8 py-2 text-xs outline-none focus:ring-2 focus:ring-blue-900/20 focus:border-blue-900 transition-all text-gray-800 placeholder-gray-400 shadow-sm"
+            />
+            {localSearch && (
+              <button
+                type="button"
+                onClick={() => setLocalSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
+                title="Clear search"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => void refetchChildren()}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 hover:border-gray-300 rounded-xl text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition-all shrink-0"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-gray-500" />
+            {t('common.actions.refresh')}
+          </button>
+        </div>
       </div>
 
       {/* Children Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {childrenList.map((child) => {
+      {filteredChildren.length === 0 ? (
+        <div className="bg-white rounded-3xl p-12 text-center border border-dashed border-gray-200 space-y-3">
+          <Search className="w-10 h-10 text-gray-300 mx-auto" />
+          <h3 className="font-bold text-gray-800">No students match your search</h3>
+          <p className="text-xs text-gray-400">
+            No children found matching "{localSearch || outletCtx?.searchQuery}".
+          </p>
+          <button
+            type="button"
+            onClick={() => setLocalSearch('')}
+            className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+          >
+            <X className="w-3.5 h-3.5" />
+            Clear search
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {filteredChildren.map((child) => {
           const isSelected = child.id === selectedChildId;
           const sectionName = child.classSection?.name || child.currentEnrollment?.classSection || t('common.childSelector.enrolled');
           const gradeLevel = child.classSection?.gradeLevel || child.currentEnrollment?.gradeLevel || t('parent.myChildren.standard');
@@ -329,6 +384,7 @@ const MyChildren: React.FC = () => {
           );
         })}
       </div>
+      )}
     </div>
   );
 };

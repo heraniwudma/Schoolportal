@@ -20,7 +20,9 @@ import {
   ChevronRight,
   ChevronUp,
   ChevronDown,
+  X,
 } from 'lucide-react';
+import { useOutletContext } from 'react-router-dom';
 import { toast, Toaster } from 'sonner';
 import { cn } from '../../lib/utils';
 import { useUsers } from '../../hooks/useUsers';
@@ -97,6 +99,8 @@ const SkeletonRow: React.FC = () => (
 const UserManagement: React.FC = () => {
   const { user: currentUser } = useAuth();
   const { activeAcademicYearId } = useAcademicYear();
+  const outletCtx = useOutletContext<{ searchQuery?: string }>() || {};
+  const globalSearchQuery = outletCtx.searchQuery;
 
   const {
     users, meta, stats, classSections, parentsList, filters,
@@ -106,6 +110,12 @@ const UserManagement: React.FC = () => {
     createUser, updateUser, activateUser, deactivateUser, resetPassword, deleteUser,
     exportUsers,
   } = useUsers();
+
+  React.useEffect(() => {
+    if (globalSearchQuery !== undefined && globalSearchQuery !== filters.search) {
+      applyFilters({ search: globalSearchQuery });
+    }
+  }, [globalSearchQuery]);
 
   // Export menu state
   const [showExportMenu, setShowExportMenu] = useState(false);
@@ -349,10 +359,20 @@ const UserManagement: React.FC = () => {
           <input
             type="text"
             placeholder="Search by name, login ID, email, admission no., staff ID…"
-            className="w-full pl-12 pr-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 font-medium text-sm transition-all"
+            className="w-full pl-12 pr-10 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 font-medium text-sm transition-all"
             value={filters.search}
             onChange={(e) => applyFilters({ search: e.target.value })}
           />
+          {filters.search && (
+            <button
+              type="button"
+              onClick={() => applyFilters({ search: '' })}
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 rounded-lg transition-colors"
+              title="Clear search"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
         <div className="flex gap-3">
           <select
@@ -428,8 +448,23 @@ const UserManagement: React.FC = () => {
                     <td colSpan={6} className="py-16 text-center">
                       <div className="flex flex-col items-center gap-3 text-gray-400">
                         <Users className="w-10 h-10 opacity-30" />
-                        <p className="font-black text-sm">No users found</p>
-                        <p className="text-xs">Try adjusting the search or filter.</p>
+                        <p className="font-black text-sm">
+                          {filters.search ? `No users match "${filters.search}"` : 'No users found'}
+                        </p>
+                        <p className="text-xs">
+                          {filters.search
+                            ? 'Try checking for typos or searching by email, login ID, or role.'
+                            : 'Try adjusting the search or filter.'}
+                        </p>
+                        {filters.search && (
+                          <button
+                            type="button"
+                            onClick={() => applyFilters({ search: '' })}
+                            className="mt-2 text-xs font-bold text-blue-900 hover:underline cursor-pointer"
+                          >
+                            Clear search
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

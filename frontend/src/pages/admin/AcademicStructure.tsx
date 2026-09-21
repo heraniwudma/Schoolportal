@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Layers, Plus, Edit2, Trash2, GraduationCap, Users, Calendar, CheckCircle, Loader2 } from 'lucide-react';
+import { Layers, Plus, Edit2, Trash2, GraduationCap, Users, Calendar, CheckCircle, Loader2, Search, X } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
+import { useOutletContext } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createAcademicYear, createGradeLevel, createSection, getSubjects, createSubject } from '../../api/academicStructure';
 import { useAcademicYear } from '../../context/AcademicYearContext';
@@ -14,6 +15,9 @@ import { AssignSubjectsDialog } from '../../components/admin/AssignSubjectsDialo
 
 const AcademicStructure = () => {
   const queryClient = useQueryClient();
+  const outletContext = useOutletContext<{ searchQuery?: string }>();
+  const globalSearchQuery = outletContext?.searchQuery || '';
+  const [localSearch, setLocalSearch] = useState('');
   const {
     academicYears,
     activeAcademicYear,
@@ -91,6 +95,23 @@ const AcademicStructure = () => {
   const currentYear = academicYears.find(y => y.isCurrent);
   const activeGradeLevels = gradeLevels.filter((g) => g.ClassSection && g.ClassSection.length > 0);
   const totalStudents = activeGradeLevels.reduce((acc, grade) => acc + (grade.StudentEnrollment?.length || 0), 0);
+
+  const rawSearch = localSearch || globalSearchQuery || '';
+  const q = rawSearch.trim().toLowerCase();
+
+  const filteredGradeLevels = activeGradeLevels.filter((g) => {
+    if (!q) return true;
+    const gradeMatch = (g.name || '').toLowerCase().includes(q);
+    const sectionMatch = (g.ClassSection || []).some((s: any) => (s.name || '').toLowerCase().includes(q));
+    return gradeMatch || sectionMatch;
+  });
+
+  const filteredSubjects = subjects.filter((s) => {
+    if (!q) return true;
+    const nameMatch = (s.name || '').toLowerCase().includes(q);
+    const codeMatch = (s.code || '').toLowerCase().includes(q);
+    return nameMatch || codeMatch;
+  });
 
   return (
     <div className="space-y-8 pb-20">
@@ -197,6 +218,29 @@ const AcademicStructure = () => {
         </div>
       </div>
 
+      {/* Search Toolbar */}
+      <div className="bg-white p-4 px-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search grade levels, sections, or core subjects..."
+            value={localSearch}
+            onChange={(e) => setLocalSearch(e.target.value)}
+            className="w-full pl-10 pr-9 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+          />
+          {localSearch && (
+            <button
+              onClick={() => setLocalSearch('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 rounded-full hover:bg-gray-200/50 transition-colors"
+              title="Clear search"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-center">
           <p className="text-sm font-bold text-gray-500 mb-1">Current Academic Year</p>
@@ -221,7 +265,7 @@ const AcademicStructure = () => {
         <div className="lg:col-span-2 space-y-6">
           <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] px-2">Active Grade Levels</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {activeGradeLevels.map((c) => (
+            {filteredGradeLevels.map((c) => (
               <div key={c.id} className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-gray-100 group hover:border-blue-900/20 transition-all">
                 <div className="flex items-start justify-between mb-8">
                   <div className="w-16 h-16 bg-blue-900 rounded-[1.5rem] flex items-center justify-center text-white">
@@ -279,8 +323,10 @@ const AcademicStructure = () => {
                 </div>
               </div>
             ))}
-            {activeGradeLevels.length === 0 && !loadingGrades && (
-              <div className="col-span-full py-10 text-center text-gray-400 font-bold">No active grade levels found for the selected academic year.</div>
+            {filteredGradeLevels.length === 0 && !loadingGrades && (
+              <div className="col-span-full py-10 text-center text-gray-400 font-bold">
+                {q ? `No grade levels found matching "${rawSearch.trim()}"` : 'No active grade levels found for the selected academic year.'}
+              </div>
             )}
           </div>
         </div>
@@ -344,7 +390,7 @@ const AcademicStructure = () => {
             <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] px-2">Core Subjects</h3>
             <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-gray-100">
               <div className="space-y-6">
-                {subjects.map((s) => (
+                {filteredSubjects.map((s) => (
                   <div key={s.id} className="flex items-center justify-between group">
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center text-blue-900 font-bold text-xs uppercase">
@@ -357,8 +403,10 @@ const AcademicStructure = () => {
                     </div>
                   </div>
                 ))}
-                {subjects.length === 0 && !loadingSubjects && (
-                  <div className="text-center text-xs text-gray-400 font-bold">No subjects found.</div>
+                {filteredSubjects.length === 0 && !loadingSubjects && (
+                  <div className="text-center text-xs text-gray-400 font-bold">
+                    {q ? `No subjects matching "${rawSearch.trim()}"` : 'No subjects found.'}
+                  </div>
                 )}
                 
                 <Dialog open={isSubjectOpen} onOpenChange={setIsSubjectOpen}>
