@@ -1,6 +1,5 @@
 
 import React, { useState, useMemo } from 'react';
-import { useOutletContext } from 'react-router-dom';
 import { CheckCircle2, AlertCircle, Clock, Users, Download, Printer, RefreshCw, RotateCcw, AlertTriangle, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../lib/api';
@@ -66,9 +65,8 @@ const STATIC_TERMS = [
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function HomeroomSubmissionMatrix() {
-  const outletCtx = useOutletContext<{ searchQuery?: string } | null>();
   const [localSearch, setLocalSearch] = useState('');
-  const effectiveSearch = (localSearch || outletCtx?.searchQuery || '').trim().toLowerCase();
+  const effectiveSearch = localSearch.trim().toLowerCase();
 
   const [selectedTerm, setSelectedTerm] = useState('TERM_1');
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
@@ -287,7 +285,7 @@ export default function HomeroomSubmissionMatrix() {
             type="text"
             aria-label="Search subjects"
             placeholder="Search subject, code, teacher..."
-            value={localSearch || outletCtx?.searchQuery || ''}
+            value={localSearch}
             onChange={(e) => setLocalSearch(e.target.value)}
             className="w-full pl-9 pr-8 py-2 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-900 focus:bg-white transition-colors"
           />
