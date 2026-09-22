@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { User, UserRole } from '../types';
+import { API_BASE_URL } from '../lib/api';
 
 interface AuthContextType {
   user: User | null;
@@ -42,7 +43,6 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const USER_STORAGE_KEY = 'school_portal_user';
 const TOKEN_STORAGE_KEY = 'school_portal_token';
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 const normalizeRole = (role: string): UserRole => {
   const normalized = role.toLowerCase();

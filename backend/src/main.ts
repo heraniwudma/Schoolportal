@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { PerformanceInterceptor } from './common/interceptors/performance.interceptor';
 
@@ -15,20 +15,48 @@ BigInt.prototype.toJSON = function (this: bigint) {
   return Number(this);
 };
 
-const defaultCorsOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
-const allowedCorsOrigins = (process.env.CORS_ORIGINS ?? '')
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
-const corsOrigins = allowedCorsOrigins.length ? allowedCorsOrigins : defaultCorsOrigins;
+function getAllowedOrigins(): string[] {
+  const origins = new Set<string>();
+
+  // Always permit local frontend dev origins
+  origins.add('http://localhost:5173');
+  origins.add('http://127.0.0.1:5173');
+
+  // Support FRONTEND_URL (single URL or comma-separated URLs)
+  if (process.env.FRONTEND_URL) {
+    process.env.FRONTEND_URL.split(',')
+      .map((url) => url.trim().replace(/\/+$/, ''))
+      .filter(Boolean)
+      .forEach((url) => origins.add(url));
+  }
+
+  // Support CORS_ORIGINS (comma-separated URLs)
+  if (process.env.CORS_ORIGINS) {
+    process.env.CORS_ORIGINS.split(',')
+      .map((url) => url.trim().replace(/\/+$/, ''))
+      .filter(Boolean)
+      .forEach((url) => origins.add(url));
+  }
+
+  return Array.from(origins);
+}
+
+const allowedOrigins = getAllowedOrigins();
 
 async function bootstrap() {
+  const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
   app.enableCors({
     origin: (origin, callback) => {
       // Requests without an Origin header (for example health checks) are not
       // browser cross-origin requests and may proceed normally.
-      callback(null, !origin || corsOrigins.includes(origin));
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      const normalizedOrigin = origin.replace(/\/+$/, '');
+      const isAllowed = allowedOrigins.includes(normalizedOrigin);
+      callback(null, isAllowed);
     },
     credentials: true,
   });
@@ -43,7 +71,9 @@ async function bootstrap() {
   );
   app.useGlobalFilters(new PrismaExceptionFilter());
   const port = Number(process.env.PORT) || 3000;
-  await app.listen(port);
+  const host = process.env.HOST || '0.0.0.0';
+  await app.listen(port, host);
+  logger.log(`Server listening on ${host}:${port}`);
 }
 
 bootstrap();

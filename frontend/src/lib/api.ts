@@ -4,7 +4,8 @@
  * touches the Supabase database directly.
  */
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+export const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000').replace(/\/+$/, '');
+const BASE_URL = API_BASE_URL;
 const TOKEN_KEY = 'school_portal_token';
 
 function getToken(): string | null {

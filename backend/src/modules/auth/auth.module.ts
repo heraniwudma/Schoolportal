@@ -12,9 +12,17 @@ import { AuthRateLimiterService } from './auth-rate-limiter.service';
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
-    JwtModule.register({
-      secret: process.env.JWT_SECRET,
-      signOptions: { expiresIn: '1d' },
+    JwtModule.registerAsync({
+      useFactory: () => {
+        const secret = process.env.JWT_SECRET;
+        if (!secret && process.env.NODE_ENV === 'production') {
+          throw new Error('FATAL: JWT_SECRET environment variable is required in production.');
+        }
+        return {
+          secret: secret || 'dev-secret-change-in-production',
+          signOptions: { expiresIn: '1d' },
+        };
+      },
     }),
   ],
   controllers: [AuthController],
