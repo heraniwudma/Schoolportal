@@ -57,24 +57,19 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule);
   app.enableCors({
-    origin: (origin, callback) => {
-      // Requests without an Origin header (for example health checks) are not
-      // browser cross-origin requests and may proceed normally.
-      if (!origin) {
-        return callback(null, true);
-      }
-
-      const normalizedOrigin = origin.replace(/\/+$/, '');
-      const isAllowed = allowedOrigins.includes(normalizedOrigin);
-      callback(null, isAllowed);
-    },
+    origin: [
+      'http://localhost:5173',
+      'http://127.0.0.1:5173',
+      'https://schoolportal-murex.vercel.app',
+    ],
     credentials: true,
   });
+
   app.getHttpAdapter().getInstance().set('etag', false);
   app.useGlobalInterceptors(new PerformanceInterceptor());
   app.useGlobalPipes(
     new ValidationPipe({
-     // whitelist: true,
+      // whitelist: true,
       //forbidNonWhitelisted: true,
       transform: true,
     }),
