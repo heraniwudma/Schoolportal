@@ -46,38 +46,41 @@ const allowedOrigins = getAllowedOrigins();
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
 
-  // TEMPORARY SAFE DIAGNOSTIC - DO NOT COMMIT PERMANENTLY
   const dbUrlPresent = Boolean(process.env.DATABASE_URL);
   const dbUrlLen = process.env.DATABASE_URL
     ? process.env.DATABASE_URL.length
     : 0;
+
   logger.log(
     `[Diagnostic] DATABASE_URL defined: ${dbUrlPresent}, length: ${dbUrlLen}`,
   );
 
   const app = await NestFactory.create(AppModule);
+
   app.enableCors({
-    origin: [
-      'http://localhost:5173',
-      'http://127.0.0.1:5173',
-      'https://schoolportal-murex.vercel.app',
-    ],
+    origin: allowedOrigins,
     credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
   app.getHttpAdapter().getInstance().set('etag', false);
+
   app.useGlobalInterceptors(new PerformanceInterceptor());
+
   app.useGlobalPipes(
     new ValidationPipe({
-      // whitelist: true,
-      //forbidNonWhitelisted: true,
       transform: true,
     }),
   );
+
   app.useGlobalFilters(new PrismaExceptionFilter());
+
   const port = Number(process.env.PORT) || 3000;
   const host = process.env.HOST || '0.0.0.0';
+
   await app.listen(port, host);
+
   logger.log(`Server listening on ${host}:${port}`);
 }
 
