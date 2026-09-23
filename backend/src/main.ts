@@ -45,6 +45,16 @@ const allowedOrigins = getAllowedOrigins();
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
+
+  // TEMPORARY SAFE DIAGNOSTIC - DO NOT COMMIT PERMANENTLY
+  const dbUrlPresent = Boolean(process.env.DATABASE_URL);
+  const dbUrlLen = process.env.DATABASE_URL
+    ? process.env.DATABASE_URL.length
+    : 0;
+  logger.log(
+    `[Diagnostic] DATABASE_URL defined: ${dbUrlPresent}, length: ${dbUrlLen}`,
+  );
+
   const app = await NestFactory.create(AppModule);
   app.enableCors({
     origin: (origin, callback) => {
